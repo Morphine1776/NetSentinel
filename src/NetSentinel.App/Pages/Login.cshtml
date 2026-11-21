@@ -1,0 +1,47 @@
+@page "/login"
+@model LoginModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in · NetSentinel</title>
+    <link rel="icon" href="~/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body class="login-body">
+    <main class="login-card">
+        <div class="brand login-brand">
+            <span class="mark" aria-hidden="true"></span>
+            <span>
+                <strong>NetSentinel</strong>
+                <small>Network operations</small>
+            </span>
+        </div>
+        <h1>Sign in to the watch floor</h1>
+        <p class="lede">Poll results, interface rates, traps, and alerts for the devices this host is watching.</p>
+        @if (!string.IsNullOrEmpty(Model.Error))
+        {
+            <p class="banner bad" role="alert">@Model.Error</p>
+        }
+        <form method="post">
+            <label>
+                Username
+                <input asp-for="Username" autocomplete="username" required />
+            </label>
+            <label>
+                Password
+                <input asp-for="Password" type="password" autocomplete="current-password" required />
+            </label>
+            <button class="btn primary" type="submit">Enter</button>
+        </form>
+        @if (Model.ShowHint)
+        {
+            <p class="hint">Development default is <span class="mono">admin</span> / <span class="mono">changeme</span>. Change <span class="mono">Dashboard</span> in appsettings.json before you expose the port.</p>
+        }
+    </main>
+</body>
+</html>

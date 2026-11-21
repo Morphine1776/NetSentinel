@@ -1,0 +1,209 @@
+@page "/settings"
+@model SettingsModel
+@{
+    ViewData["Title"] = "Settings";
+    string DeviceName(int? id) => id is int value ? Model.Devices.FirstOrDefault(device => device.Id == value)?.Name ?? "Missing device" : "All devices";
+}
+<header class="top">
+    <div>
+        <p class="eyebrow">Control</p>
+        <h1>Settings</h1>
+    </div>
+</header>
+
+@if (!string.IsNullOrEmpty(Model.Notice))
+{
+    <p class="banner">@Model.Notice</p>
+}
+@if (Model.Errors.Count > 0)
+{
+    <div class="banner bad" role="alert">
+        @foreach (var error in Model.Errors)
+        {
+            <div>@error</div>
+        }
+    </div>
+}
+
+<form method="post" class="stack">
+    <section class="panel form-grid">
+        <h2 class="span-2">Retention and reachability</h2>
+        <label>
+            Keep samples, traps, and resolved alerts (days)
+            <input asp-for="Form.RetentionDays" type="number" min="1" max="3650" />
+        </label>
+        <label>
+            Polls before a device-down alert
+            <input asp-for="Form.FailureThreshold" type="number" min="1" max="20" />
+        </label>
+        <p class="hint span-2">Cleanup runs about once an hour. Open alerts are kept. On Windows, the install script can move the trap port to 162; binding that port needs an elevated service account.</p>
+    </section>
+
+    <section class="panel form-grid">
+        <h2 class="span-2">Trap listener</h2>
+        <label class="check">
+            <input asp-for="Form.TrapEnabled" />
+            <span>Receive SNMP traps</span>
+        </label>
+        <label>
+            UDP port
+            <input asp-for="Form.TrapPort" type="number" min="1" max="65535" />
+        </label>
+        <p class="hint span-2">Changing the port rebinds immediately. If the port is taken, the rest of the service keeps running and the log records the bind error.</p>
+    </section>
+
+    <section class="panel form-grid">
+        <h2 class="span-2">Email</h2>
+        <label class="check">
+            <input asp-for="Form.SmtpEnabled" />
+            <span>Send mail when alerts open or clear</span>
+        </label>
+        <label>
+            SMTP host
+            <input asp-for="Form.SmtpHost" placeholder="smtp.example.com" />
+        </label>
+        <label>
+            Port
+            <input asp-for="Form.SmtpPort" type="number" min="1" max="65535" />
+        </label>
+        <label>
+            Security
+            <select asp-for="Form.SmtpSecurity">
+                <option value="StartTls">STARTTLS</option>
+                <option value="SslOnConnect">SSL on connect</option>
+                <option value="None">None</option>
+            </select>
+        </label>
+        <label>
+            Username
+            <input asp-for="Form.SmtpUser" autocomplete="off" />
+        </label>
+        <label>
+            Password
+            <input asp-for="Form.SmtpPassword" type="password" autocomplete="new-password" placeholder="Leave blank to keep" />
+        </label>
+        <label>
+            From
+            <input asp-for="Form.SmtpFrom" placeholder="netsentinel@example.com" />
+        </label>
+        <label>
+            To
+            <input asp-for="Form.SmtpTo" placeholder="oncall@example.com, backup@example.com" />
+        </label>
+    </section>
+
+    <div class="actions">
+        <button class="btn primary" type="submit">Save settings</button>
+    </div>
+</form>
+
+<form method="post" asp-page-handler="TestEmail" class="inline-form">
+    <button class="btn" type="submit">Send test email</button>
+    <span class="hint">Uses the saved SMTP settings.</span>
+</form>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Threshold rules</h2>
+    </div>
+    @if (Model.Rules.Count == 0)
+    {
+        <p class="empty-inline">No extra rules. Device down, device up, and interface down are always evaluated.</p>
+    }
+    else
+    {
+        <div class="table-wrap flat">
+            <table class="responsive">
+                <thead>
+                    <tr>
+                        <th>Rule</th>
+                        <th>Scope</th>
+                        <th>Metric</th>
+                        <th>Condition</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var rule in Model.Rules)
+                {
+                    <tr>
+                        <td data-label="Rule">@rule.Name @if (!rule.Enabled) {<span class="pill">off</span>}</td>
+                        <td data-label="Scope">@DeviceName(rule.DeviceId)</td>
+                        <td data-label="Metric" class="mono">@rule.Metric</td>
+                        <td data-label="Condition" class="mono">@rule.Operator @rule.Threshold.ToString("0.##") @rule.Severity</td>
+                        <td data-label="Actions">
+                            <form method="post" asp-page-handler="DeleteRule" asp-route-ruleId="@rule.Id">
+                                <button class="btn tiny danger" type="submit">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <form method="post" asp-page-handler="Rule" class="form-grid rule-form">
+        <label>
+            Name
+            <input asp-for="Rule.Name" maxlength="80" required placeholder="Uplink over 80%" />
+        </label>
+        <label>
+            Device
+            <select asp-for="Rule.DeviceId">
+                <option value="">All devices</option>
+                @foreach (var device in Model.Devices)
+                {
+                    <option value="@device.Id">@device.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            Metric
+            <select asp-for="Rule.Metric">
+                <option value="response_ms">Response time (ms)</option>
+                <option value="in_bps">Inbound bitrate (bps)</option>
+                <option value="out_bps">Outbound bitrate (bps)</option>
+                <option value="in_util">Inbound utilization (%)</option>
+                <option value="out_util">Outbound utilization (%)</option>
+                @foreach (var oid in Model.Oids)
+                {
+                    <option value="custom:@oid.Id">@oid.Device?.Name / @oid.Name value</option>
+                    <option value="custom_rate:@oid.Id">@oid.Device?.Name / @oid.Name rate</option>
+                }
+            </select>
+        </label>
+        <label>
+            Interface name contains
+            <input asp-for="Rule.InterfaceFilter" placeholder="Gi0/0" />
+        </label>
+        <label>
+            Operator
+            <select asp-for="Rule.Operator">
+                <option value="GreaterThan">greater than</option>
+                <option value="GreaterOrEqual">greater or equal</option>
+                <option value="LessThan">less than</option>
+                <option value="LessOrEqual">less or equal</option>
+            </select>
+        </label>
+        <label>
+            Threshold
+            <input asp-for="Rule.Threshold" type="number" step="any" required />
+        </label>
+        <label>
+            Severity
+            <select asp-for="Rule.Severity">
+                <option value="Info">Info</option>
+                <option value="Warning" selected>Warning</option>
+                <option value="Critical">Critical</option>
+            </select>
+        </label>
+        <label class="check">
+            <input asp-for="Rule.Enabled" />
+            <span>Enabled</span>
+        </label>
+        <div class="actions span-2">
+            <button class="btn primary" type="submit">Add rule</button>
+        </div>
+    </form>
+</section>

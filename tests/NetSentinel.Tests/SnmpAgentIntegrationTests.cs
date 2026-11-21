@@ -1,0 +1,82 @@
+using System.Net;
+using System.Net.Sockets;
+using Lextm.SharpSnmpLib.Security;
+using Microsoft.Extensions.Logging.Abstractions;
+using NetSentinel.Core;
+using NetSentinel.SimAgent;
+using NetSentinel.Snmp;
+
+namespace NetSentinel.Tests;
+
+public class SnmpAgentIntegrationTests
+{
+    [Fact(Timeout = 20000)]
+    public async Task Poller_reads_system_and_interface_counters_from_the_simulator()
+    {
+        using var agent = new SimSnmpAgent();
+        agent.Start();
+        var poller = new DevicePoller(NullLogger<DevicePoller>.Instance);
+        var target = Target(agent.Port, "public");
+
+        var first = await poller.PollAsync(target, CancellationToken.None);
+        await Task.Delay(1200);
+        var second = await poller.PollAsync(target, CancellationToken.None);
+
+        Assert.True(first.SnmpOk, first.Error);
+        Assert.Equal("sim-core-01", first.SysName);
+        Assert.Contains("Simulator", first.SysDescr);
+        Assert.NotNull(first.SysUpTimeTicks);
+        Assert.Equal(4, first.Interfaces.Count);
+
+        var uplink = second.Interfaces.Single(iface => iface.IfDescr == "Gi0/0");
+        var spare = second.Interfaces.Single(iface => iface.IfDescr == "Gi0/2");
+        Assert.Equal(64, uplink.CounterBits);
+        Assert.Equal(1, uplink.OperStatus);
+        Assert.Equal(1_000_000_000ul, uplink.SpeedBps);
+        Assert.Equal(2, spare.OperStatus);
+        Assert.Equal(1, spare.AdminStatus);
+
+        var before = first.Interfaces.Single(iface => iface.IfDescr == "Gi0/0");
+        Assert.True(uplink.InOctets > before.InOctets);
+        var elapsed = (second.SampledAt - first.SampledAt).TotalSeconds;
+        var bps = CounterMath.BitsPerSecond(before.InOctets, uplink.InOctets, uplink.CounterBits, elapsed, uptimeReset: false);
+        Assert.NotNull(bps);
+        Assert.InRange(bps.Value, 90_000_000, 110_000_000);
+
+        var wrong = await poller.PollAsync(target with { Community = "nope", TimeoutMs = 600, Retries = 0 }, CancellationToken.None);
+        Assert.False(wrong.SnmpOk);
+    }
+
+    [Fact(Timeout = 15000)]
+    public async Task Simulator_trap_is_parsed_as_a_cold_start()
+    {
+        using var agent = new SimSnmpAgent();
+        agent.Start();
+        using var receiver = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+        var port = ((IPEndPoint)receiver.Client.LocalEndPoint!).Port;
+        agent.SendTrap(port);
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var packet = await receiver.ReceiveAsync(timeout.Token);
+        var traps = SnmpTrapParser.Parse(packet.Buffer, new UserRegistry());
+        var trap = Assert.Single(traps);
+        Assert.Equal("1.3.6.1.6.3.1.1.5.1", trap.TrapOid);
+        Assert.Contains("1.3.6.1.4.1.99999.1.0", trap.Varbinds);
+        Assert.Equal("v2c", trap.Version);
+    }
+
+    private static DevicePollTarget Target(int port, string community) => new(
+        "127.0.0.1",
+        port,
+        SnmpVersion.V2C,
+        community,
+        "",
+        "",
+        "None",
+        "",
+        "None",
+        "",
+        Array.Empty<CustomOidTarget>(),
+        2000,
+        0);
+}

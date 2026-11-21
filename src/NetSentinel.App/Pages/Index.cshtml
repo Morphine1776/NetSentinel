@@ -1,0 +1,87 @@
+@page "/"
+@model IndexModel
+@{
+    ViewData["Title"] = "Devices";
+    ViewData["Refresh"] = "45";
+}
+<header class="top">
+    <div>
+        <p class="eyebrow">Overview</p>
+        <h1>Devices</h1>
+    </div>
+    <a class="btn primary" href="/devices/edit">Add device</a>
+</header>
+
+<section class="stats">
+    <article>
+        <span>Reachable</span>
+        <strong>@Model.Up</strong>
+    </article>
+    <article>
+        <span>Down</span>
+        <strong class="danger">@Model.Down</strong>
+    </article>
+    <article>
+        <span>Waiting</span>
+        <strong>@Model.Pending</strong>
+    </article>
+    <article>
+        <span>Watched</span>
+        <strong>@Model.Devices.Count</strong>
+    </article>
+</section>
+
+@if (Model.Devices.Count == 0)
+{
+    <section class="empty">
+        <h2>No devices yet</h2>
+        <p>Add a switch, router, or the loopback simulator. The simulator speaks SNMP on <span class="mono">127.0.0.1:1161</span> with community <span class="mono">public</span>.</p>
+        <a class="btn primary" href="/devices/edit">Add the first device</a>
+    </section>
+}
+else
+{
+    <div class="table-wrap">
+        <table class="responsive">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Device</th>
+                    <th>SNMP</th>
+                    <th>sysName</th>
+                    <th>Uptime</th>
+                    <th>Response</th>
+                    <th>Ping</th>
+                    <th>Last poll</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var device in Model.Devices)
+            {
+                <tr>
+                    <td data-label="Status">
+                        <span class="status">
+                            <span class="lamp @TextFormat.Lamp(device)"></span>
+                            @TextFormat.Reachability(device)
+                        </span>
+                    </td>
+                    <td data-label="Device">
+                        <a class="device-link" href="/devices/@device.Id">@device.Name</a>
+                        <div class="sub mono">@device.Host:@device.Port · every @device.PollIntervalSeconds s</div>
+                        @if (!string.IsNullOrEmpty(device.LastError))
+                        {
+                            <div class="sub bad-text">@device.LastError</div>
+                        }
+                    </td>
+                    <td data-label="SNMP" class="mono">@TextFormat.Version(device.Version)</td>
+                    <td data-label="sysName">@(device.LastSysName ?? "—")</td>
+                    <td data-label="Uptime" class="mono">@TextFormat.Uptime(device.LastSysUpTimeTicks)</td>
+                    <td data-label="Response" class="mono">@TextFormat.Ms(device.LastResponseMs)</td>
+                    <td data-label="Ping">@TextFormat.Ping(device.LastPingOk)</td>
+                    <td data-label="Last poll" class="mono">@TextFormat.When(device.LastPollAt)</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

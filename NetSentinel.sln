@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{80EB9B7B-03CE-4150-BB97-4C5013C8881E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSentinel.Core", "src\NetSentinel.Core\NetSentinel.Core.csproj", "{AB01DADD-120A-4EC3-AF69-81AC65504046}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSentinel.App", "src\NetSentinel.App\NetSentinel.App.csproj", "{5F3AF127-4990-49B2-8B16-4C6EB6CAC9D4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSentinel.SimAgent", "src\NetSentinel.SimAgent\NetSentinel.SimAgent.csproj", "{E3314D12-C9CA-4FE5-945A-E97CE85AA3D5}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{563C22EE-4AAE-4881-8EEB-CE9EBD05572E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NetSentinel.Tests", "tests\NetSentinel.Tests\NetSentinel.Tests.csproj", "{2791AB11-7DDF-4E2B-B6AE-4C1AF3488E8E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AB01DADD-120A-4EC3-AF69-81AC65504046}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB01DADD-120A-4EC3-AF69-81AC65504046}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB01DADD-120A-4EC3-AF69-81AC65504046}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB01DADD-120A-4EC3-AF69-81AC65504046}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5F3AF127-4990-49B2-8B16-4C6EB6CAC9D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5F3AF127-4990-49B2-8B16-4C6EB6CAC9D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5F3AF127-4990-49B2-8B16-4C6EB6CAC9D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5F3AF127-4990-49B2-8B16-4C6EB6CAC9D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E3314D12-C9CA-4FE5-945A-E97CE85AA3D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E3314D12-C9CA-4FE5-945A-E97CE85AA3D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E3314D12-C9CA-4FE5-945A-E97CE85AA3D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E3314D12-C9CA-4FE5-945A-E97CE85AA3D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2791AB11-7DDF-4E2B-B6AE-4C1AF3488E8E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2791AB11-7DDF-4E2B-B6AE-4C1AF3488E8E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2791AB11-7DDF-4E2B-B6AE-4C1AF3488E8E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2791AB11-7DDF-4E2B-B6AE-4C1AF3488E8E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{AB01DADD-120A-4EC3-AF69-81AC65504046} = {80EB9B7B-03CE-4150-BB97-4C5013C8881E}
+		{5F3AF127-4990-49B2-8B16-4C6EB6CAC9D4} = {80EB9B7B-03CE-4150-BB97-4C5013C8881E}
+		{E3314D12-C9CA-4FE5-945A-E97CE85AA3D5} = {80EB9B7B-03CE-4150-BB97-4C5013C8881E}
+		{2791AB11-7DDF-4E2B-B6AE-4C1AF3488E8E} = {563C22EE-4AAE-4881-8EEB-CE9EBD05572E}
+	EndGlobalSection
+EndGlobal

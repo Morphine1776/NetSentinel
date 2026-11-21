@@ -1,0 +1,135 @@
+@page "/devices/edit/{id:int?}"
+@model NetSentinel.Pages.Devices.EditModel
+@{
+    ViewData["Title"] = Model.IsNew ? "Add device" : "Edit device";
+}
+<header class="top">
+    <div>
+        <p class="eyebrow"><a href="/">Devices</a></p>
+        <h1>@(Model.IsNew ? "Add a device" : "Edit " + Model.Input.Name)</h1>
+    </div>
+</header>
+
+@if (Model.Errors.Count > 0)
+{
+    <div class="banner bad" role="alert">
+        @foreach (var error in Model.Errors)
+        {
+            <div>@error</div>
+        }
+    </div>
+}
+
+<form method="post" class="stack" id="device-form">
+    <section class="panel form-grid">
+        <label>
+            Name
+            <input asp-for="Input.Name" required maxlength="80" placeholder="Core switch" />
+        </label>
+        <label>
+            Host or IP
+            <input asp-for="Input.Host" required maxlength="255" placeholder="10.0.0.1" />
+        </label>
+        <label>
+            SNMP port
+            <input asp-for="Input.Port" type="number" min="1" max="65535" />
+        </label>
+        <label>
+            Poll interval (seconds)
+            <input asp-for="Input.PollIntervalSeconds" type="number" min="5" max="86400" />
+        </label>
+        <label>
+            Version
+            <select asp-for="Input.Version" id="snmp-version">
+                <option value="V1">SNMP v1</option>
+                <option value="V2C">SNMP v2c</option>
+                <option value="V3">SNMP v3</option>
+            </select>
+        </label>
+        <label class="check">
+            <input asp-for="Input.Enabled" />
+            <span>Polling enabled</span>
+        </label>
+        <label class="v2-field">
+            Community
+            <input asp-for="Input.Community" maxlength="128" autocomplete="off" />
+        </label>
+        <div class="v3-field span-2">
+            <div class="form-grid">
+                <label>
+                    v3 user
+                    <input asp-for="Input.V3User" maxlength="64" autocomplete="off" />
+                </label>
+                <label>
+                    Context name
+                    <input asp-for="Input.V3Context" maxlength="64" />
+                </label>
+                <label>
+                    Auth protocol
+                    <select asp-for="Input.V3AuthProtocol">
+                        <option>None</option>
+                        <option>MD5</option>
+                        <option>SHA1</option>
+                        <option>SHA256</option>
+                        <option>SHA384</option>
+                        <option>SHA512</option>
+                    </select>
+                </label>
+                <label>
+                    Auth password
+                    <input asp-for="Input.V3AuthPassword" type="password" autocomplete="new-password" placeholder="@(Model.IsNew ? "" : "Leave blank to keep")" />
+                </label>
+                <label>
+                    Privacy protocol
+                    <select asp-for="Input.V3PrivProtocol">
+                        <option>None</option>
+                        <option>DES</option>
+                        <option>AES</option>
+                        <option>AES192</option>
+                        <option>AES256</option>
+                    </select>
+                </label>
+                <label>
+                    Privacy password
+                    <input asp-for="Input.V3PrivPassword" type="password" autocomplete="new-password" placeholder="@(Model.IsNew ? "" : "Leave blank to keep")" />
+                </label>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <h2>Custom OIDs</h2>
+            <button class="btn" type="button" id="add-oid">Add OID</button>
+        </div>
+        <p class="hint">Polled with the device. Counter32 and Counter64 values also get a per-second rate for threshold rules.</p>
+        <div id="oid-list">
+            @for (var i = 0; i < Model.Input.CustomOids.Count; i++)
+            {
+                <div class="oid-row">
+                    <input type="hidden" data-field="Id" name="Input.CustomOids[@i].Id" value="@Model.Input.CustomOids[i].Id" />
+                    <input data-field="Name" name="Input.CustomOids[@i].Name" value="@Model.Input.CustomOids[i].Name" placeholder="Name" maxlength="80" />
+                    <input data-field="Oid" name="Input.CustomOids[@i].Oid" value="@Model.Input.CustomOids[i].Oid" placeholder="1.3.6.1.4.1…" class="mono" maxlength="200" />
+                    <input data-field="Unit" name="Input.CustomOids[@i].Unit" value="@Model.Input.CustomOids[i].Unit" placeholder="Unit" maxlength="16" />
+                    <button class="btn ghost remove-oid" type="button">Remove</button>
+                </div>
+            }
+        </div>
+    </section>
+
+    <div class="actions">
+        <button class="btn primary" type="submit">Save device</button>
+        <a class="btn ghost" href="/">Cancel</a>
+    </div>
+</form>
+
+@if (!Model.IsNew)
+{
+    <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Input.Id" class="danger-zone" onsubmit="return confirm('Remove this device and its stored samples?');">
+        <div>
+            <strong>Remove device</strong>
+            <p>Deletes the device, its samples, and alerts scoped to it.</p>
+        </div>
+        <button class="btn danger" type="submit">Delete</button>
+    </form>
+}

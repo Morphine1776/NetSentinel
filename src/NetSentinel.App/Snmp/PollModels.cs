@@ -56,4 +56,5 @@ public sealed class PollResult
     public DateTime SampledAt { get; set; } = DateTime.UtcNow;
     public List<InterfaceReading> Interfaces { get; set; } = new();
     public List<CustomOidReading> CustomOids { get; set; } = new();
+    public List<NeighborObservation> Neighbors { get; set; } = new();
 }

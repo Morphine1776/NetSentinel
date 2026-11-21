@@ -197,6 +197,8 @@ public sealed class PollWorker : BackgroundService
                 {
                     state.Present = false;
                 }
+
+                await ReplaceDiscoveredLinksAsync(db, device.Id, result.Neighbors, states, cancellationToken);
             }
 
             var customs = new List<CustomSnapshot>();
@@ -339,6 +341,45 @@ public sealed class PollWorker : BackgroundService
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogError(ex, "Poll failed for device {Id}", id);
+        }
+    }
+
+    private static async Task ReplaceDiscoveredLinksAsync(
+        AppDbContext db,
+        int deviceId,
+        IReadOnlyList<NeighborObservation> neighbors,
+        IReadOnlyList<InterfaceState> states,
+        CancellationToken cancellationToken)
+    {
+        var known = await db.Devices.AsNoTracking()
+            .Select(item => new KnownDevice(item.Id, item.Name, item.Host, item.LastSysName))
+            .ToListAsync(cancellationToken);
+        var interfaces = states.Where(state => state.Present).Select(state => new KnownInterface(
+            state.IfIndex,
+            state.IfDescr,
+            state.IfName,
+            state.IfAlias,
+            state.InUtil,
+            state.OutUtil)).ToList();
+        var matched = NeighborMatcher.Match(deviceId, neighbors, known, interfaces);
+        var stale = await db.Links
+            .Where(link => link.SourceDeviceId == deviceId && (link.Kind == "lldp" || link.Kind == "cdp"))
+            .ToListAsync(cancellationToken);
+        db.Links.RemoveRange(stale);
+        var now = DateTime.UtcNow;
+        foreach (var link in matched)
+        {
+            db.Links.Add(new DeviceLink
+            {
+                SourceDeviceId = deviceId,
+                TargetDeviceId = link.RemoteDeviceId,
+                Kind = link.Protocol,
+                LocalIfIndex = link.LocalIfIndex,
+                LocalPort = link.LocalPort,
+                RemotePort = link.RemotePort,
+                Utilization = link.Utilization,
+                UpdatedAt = now
+            });
         }
     }
 

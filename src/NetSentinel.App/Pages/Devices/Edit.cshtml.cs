@@ -23,10 +23,13 @@ public sealed class EditModel : PageModel
 
     public List<string> Errors { get; private set; } = new();
 
+    public List<Device> OtherDevices { get; private set; } = new();
+
     public bool IsNew => Input.Id is null;
 
     public async Task<IActionResult> OnGetAsync(int? id)
     {
+        await LoadOthersAsync();
         if (id is null)
         {
             Input = new DeviceInput { CustomOids = new List<CustomOidInput> { new() } };
@@ -53,6 +56,10 @@ public sealed class EditModel : PageModel
             V3PrivProtocol = device.V3PrivProtocol,
             PollIntervalSeconds = device.PollIntervalSeconds,
             Enabled = device.Enabled,
+            GroupName = device.GroupName,
+            Location = device.Location,
+            Tags = device.Tags,
+            ParentDeviceId = device.ParentDeviceId,
             CustomOids = device.CustomOids.Select(oid => new CustomOidInput
             {
                 Id = oid.Id,
@@ -76,6 +83,7 @@ public sealed class EditModel : PageModel
         if (!saved.Ok || saved.Device is null)
         {
             Errors = saved.Errors;
+            await LoadOthersAsync();
             if (Input.CustomOids.Count == 0)
             {
                 Input.CustomOids.Add(new CustomOidInput());
@@ -91,5 +99,10 @@ public sealed class EditModel : PageModel
     {
         await _devices.DeleteAsync(id);
         return RedirectToPage("/Index");
+    }
+
+    private async Task LoadOthersAsync()
+    {
+        OtherDevices = await _db.Devices.AsNoTracking().OrderBy(device => device.Name).ToListAsync();
     }
 }

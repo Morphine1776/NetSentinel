@@ -56,6 +56,8 @@ builder.Services.AddHostedService<RetentionWorker>();
 builder.Services.AddScoped<DeviceAdminService>();
 builder.Services.AddScoped<RuleService>();
 builder.Services.AddScoped<EmailNotifier>();
+builder.Services.AddScoped<ImportService>();
+builder.Services.AddScoped<MapService>();
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

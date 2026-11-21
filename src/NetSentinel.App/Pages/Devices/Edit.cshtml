@@ -46,6 +46,28 @@
                 <option value="V3">SNMP v3</option>
             </select>
         </label>
+        <label>
+            Group
+            <input asp-for="Input.GroupName" maxlength="80" placeholder="campus" />
+        </label>
+        <label>
+            Location
+            <input asp-for="Input.Location" maxlength="80" placeholder="MDF" />
+        </label>
+        <label>
+            Tags
+            <input asp-for="Input.Tags" maxlength="200" placeholder="core, edge" />
+        </label>
+        <label>
+            Parent / uplink
+            <select asp-for="Input.ParentDeviceId">
+                <option value="">None</option>
+                @foreach (var device in Model.OtherDevices.Where(device => device.Id != Model.Input.Id))
+                {
+                    <option value="@device.Id">@device.Name</option>
+                }
+            </select>
+        </label>
         <label class="check">
             <input asp-for="Input.Enabled" />
             <span>Polling enabled</span>

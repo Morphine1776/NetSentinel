@@ -123,6 +123,16 @@ Flags: `--port`, `--trap`, `--community`, `--no-trap`.
 
 Add a device for `127.0.0.1`, port `1161`, v2c, community `public`. A 5 second poll interval is enough to see the charts move. Bandwidth needs two successful polls because it is a delta.
 
+By default the simulator starts three devices so the network map has LLDP neighbors:
+
+| sysName | UDP port |
+| --- | --- |
+| sim-core-01 | 1161 |
+| sim-dist-01 | 1163 |
+| sim-access-01 | 1164 |
+
+Core's Gi0/0 advertises dist, and Gi0/1 advertises access. Both sides advertise the link back. Pass `--single` (or `--port`) to run only the core device. The import template and the Map page are the easiest way to load all three: export is unnecessary for a first lab; a CSV with those names, hosts `127.0.0.1`, ports 1161/1163/1164, and parent `sim-core-01` on the other two is enough. The running core device is matched by sysName after its first poll even if its display name is different.
+
 ## Using the dashboard
 
 - **Devices.** Status, sysName, uptime, response time, and ping. Open a device for the interface table and charts. Ranges are 1 hour, 6 hours, 24 hours, and 7 days.
@@ -130,6 +140,8 @@ Add a device for `127.0.0.1`, port `1161`, v2c, community `public`. A 5 second p
 - **Alerts.** Open and acknowledged items, plus history. Ack and resolve are manual; a cleared condition resolves the matching alert on the next poll.
 - **Traps.** Newest first, with varbinds. v1 and v2c are stored as they arrive. v3 traps are decrypted when the username matches a configured device. Informs get a response so the sender does not retry.
 - **Settings.** Retention, failure threshold, trap listener, SMTP, and threshold rules.
+- **Import.** Upload a CSV (template and export use the same columns). The preview lists ready rows, duplicates of devices you already have, and per-row errors. Choose skip or update for duplicates, then commit. Headers are case-insensitive and can appear in any order. Quoted commas are supported. The limit is 1,000 devices.
+- **Map.** Devices are nodes colored by live status. Edges come from LLDP (`lldpRemTable`) and CDP (`cdpCacheTable`) when the neighbor's sysName, chassis id, or management address matches one known device, plus the parent/uplink field and any manual link you add. A matched local interface shows link utilization. Drag a node to save its position. Group by the CSV group or location fields. Click a node to open the device. The map refreshes every 15 seconds.
 
 REST endpoints under `/api` accept the same cookie and, for POST, PUT, and DELETE, the header `X-NetSentinel: 1`. `GET /health` is anonymous.
 

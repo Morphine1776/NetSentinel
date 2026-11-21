@@ -5,6 +5,78 @@
     window.setTimeout(function () { window.location.reload(); }, refresh * 1000);
   }
 
+  const importForm = document.getElementById("import-form");
+  if (importForm) {
+    let csvText = "";
+    const preview = document.getElementById("import-preview");
+    const rows = document.getElementById("import-rows");
+    const summary = document.getElementById("import-summary");
+    const fileError = document.getElementById("import-file-error");
+    const result = document.getElementById("import-result");
+    importForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      const file = document.getElementById("import-file").files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function () {
+        csvText = String(reader.result || "");
+        fetch("/api/devices/import/preview", {
+          method: "POST",
+          headers: { "Content-Type": "text/csv", "X-NetSentinel": "1" },
+          body: csvText
+        }).then(function (response) { return response.json(); }).then(function (payload) {
+          if (payload.fileError) {
+            fileError.hidden = false;
+            fileError.textContent = payload.fileError;
+            preview.hidden = true;
+            return;
+          }
+          fileError.hidden = true;
+          preview.hidden = false;
+          summary.textContent = payload.ready + " ready, " + payload.duplicates + " duplicates, " + payload.errors + " errors.";
+          rows.replaceChildren();
+          (payload.rows || []).forEach(function (row) {
+            const tr = document.createElement("tr");
+            tr.className = "row-" + row.status;
+            function cell(text) {
+              const td = document.createElement("td");
+              td.textContent = text || "";
+              return td;
+            }
+            tr.append(
+              cell(String(row.line)),
+              cell(row.status),
+              cell(row.name),
+              cell(row.host),
+              cell(row.group),
+              cell(row.parent),
+              cell((row.errors || []).join(" ") || (row.duplicateMatch ? "Matches an existing device by " + row.duplicateMatch + "." : ""))
+            );
+            rows.appendChild(tr);
+          });
+        });
+      };
+      reader.readAsText(file);
+    });
+    document.getElementById("import-commit").addEventListener("submit", function (event) {
+      event.preventDefault();
+      const mode = document.querySelector("input[name=duplicateMode]:checked").value;
+      fetch("/api/devices/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-NetSentinel": "1" },
+        body: JSON.stringify({ csv: csvText, duplicateMode: mode })
+      }).then(function (response) { return response.json().then(function (body) { return { ok: response.ok, body: body }; }); })
+        .then(function (payload) {
+          if (!payload.ok) {
+            result.textContent = (payload.body.errors || ["Import failed."]).join(" ");
+            return;
+          }
+          const body = payload.body;
+          result.textContent = "Created " + body.created + ", updated " + body.updated + ", skipped " + body.skipped + ", rejected " + body.rejected + ".";
+        });
+    });
+  }
+
   const version = document.getElementById("snmp-version");
   if (version) {
     const sync = function () {

@@ -4,6 +4,7 @@ var port = 1161;
 var trapPort = 1162;
 var community = "public";
 var sendTrap = true;
+var single = false;
 
 for (var i = 0; i < args.Length; i++)
 {
@@ -11,6 +12,7 @@ for (var i = 0; i < args.Length; i++)
     {
         case "--port" when i + 1 < args.Length:
             port = int.Parse(args[++i]);
+            single = true;
             break;
         case "--trap" when i + 1 < args.Length:
             trapPort = int.Parse(args[++i]);
@@ -18,29 +20,51 @@ for (var i = 0; i < args.Length; i++)
         case "--community" when i + 1 < args.Length:
             community = args[++i];
             break;
+        case "--single":
+            single = true;
+            break;
         case "--no-trap":
             sendTrap = false;
             break;
         case "--help":
         case "-h":
             Console.WriteLine("NetSentinel SNMP simulator");
-            Console.WriteLine("  --port <udp>        agent port (default 1161)");
-            Console.WriteLine("  --trap <udp>        trap destination port (default 1162)");
+            Console.WriteLine("  default             three devices on UDP 1161, 1163, and 1164");
+            Console.WriteLine("  --single            one device, on --port or 1161");
+            Console.WriteLine("  --port <udp>        implies --single");
+            Console.WriteLine("  --trap <udp>        trap destination (default 1162)");
             Console.WriteLine("  --community <name>  community string (default public)");
             Console.WriteLine("  --no-trap           do not send a startup trap");
             return;
     }
 }
 
-using var agent = new SimSnmpAgent(port, community);
-agent.Start();
+var agents = new List<SimSnmpAgent>();
+if (single)
+{
+    agents.Add(new SimSnmpAgent(port, community, SimCatalog.Core));
+}
+else
+{
+    agents.Add(new SimSnmpAgent(1161, community, SimCatalog.Core));
+    agents.Add(new SimSnmpAgent(1163, community, SimCatalog.Distribution));
+    agents.Add(new SimSnmpAgent(1164, community, SimCatalog.Access));
+}
+
+foreach (var agent in agents)
+{
+    agent.Start();
+}
+
 Console.WriteLine("NetSentinel SNMP simulator");
-Console.WriteLine($"  agent     udp://127.0.0.1:{agent.Port}");
 Console.WriteLine($"  community {community}");
-Console.WriteLine("  sysName   sim-core-01");
-Console.WriteLine("  Gi0/0     100 Mbps simulated inbound");
-Console.WriteLine("  Gi0/2     administratively up, operationally down");
-Console.WriteLine($"  trap      coldStart to 127.0.0.1:{trapPort}");
+foreach (var agent in agents)
+{
+    Console.WriteLine($"  {agent.SysName,-14} udp://127.0.0.1:{agent.Port}");
+}
+
+Console.WriteLine("  LLDP      core Gi0/0 — dist, core Gi0/1 — access");
+Console.WriteLine($"  trap      coldStart from {agents[0].SysName} to 127.0.0.1:{trapPort}");
 Console.WriteLine("Ctrl+C to stop.");
 
 using var stopped = new CancellationTokenSource();
@@ -52,12 +76,13 @@ Console.CancelKeyPress += (_, eventArgs) =>
 
 if (sendTrap)
 {
+    var sender = agents[0];
     _ = Task.Run(async () =>
     {
         await Task.Delay(500, stopped.Token);
         try
         {
-            agent.SendTrap(trapPort);
+            sender.SendTrap(trapPort);
             Console.WriteLine("Sent coldStart trap.");
         }
         catch (Exception ex)
@@ -74,4 +99,11 @@ try
 catch (OperationCanceledException)
 {
     Console.WriteLine("Stopping simulator.");
+}
+finally
+{
+    foreach (var agent in agents)
+    {
+        agent.Dispose();
+    }
 }

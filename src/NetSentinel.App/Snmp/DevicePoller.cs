@@ -18,6 +18,9 @@ public sealed class DevicePoller
     public const string IfXTable = "1.3.6.1.2.1.31.1.1";
     public const string IfEntry = "1.3.6.1.2.1.2.2.1";
     public const string IfXEntry = "1.3.6.1.2.1.31.1.1.1";
+    public const string LldpRemTable = "1.0.8802.1.1.2.1.4.1";
+    public const string LldpLocPortTable = "1.0.8802.1.1.2.1.3.7";
+    public const string CdpCacheTable = "1.3.6.1.4.1.9.9.23.1.2.1";
 
     private readonly ILogger<DevicePoller> _logger;
 
@@ -110,6 +113,7 @@ public sealed class DevicePoller
             result.Interfaces = BuildInterfaces(ifTable, ifX);
             result.SampledAt = DateTime.UtcNow;
             result.CustomOids = ReadCustom(target, endpoint, timeout, ref report, privacy);
+            result.Neighbors = ReadNeighbors(target, endpoint, timeout, ref report, privacy);
             result.SnmpOk = true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -166,6 +170,51 @@ public sealed class DevicePoller
         }
 
         return readings;
+    }
+
+    private List<NeighborObservation> ReadNeighbors(
+        DevicePollTarget target,
+        IPEndPoint endpoint,
+        int timeout,
+        ref ISnmpMessage? report,
+        IPrivacyProvider? privacy)
+    {
+        var bindings = new List<SnmpBinding>();
+        foreach (var root in new[] { LldpRemTable, LldpLocPortTable, CdpCacheTable })
+        {
+            try
+            {
+                foreach (var variable in Walk(target, endpoint, timeout, root, ref report, privacy))
+                {
+                    bindings.Add(new SnmpBinding(variable.Id.ToString(), FormatNeighborValue(variable)));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Neighbor walk {Root} failed for {Host}", root, target.Host);
+            }
+        }
+
+        return NeighborTables.Parse(bindings);
+    }
+
+    private static string FormatNeighborValue(Variable variable)
+    {
+        if (variable.Data is OctetString text)
+        {
+            var raw = text.GetRaw();
+            if (raw.Length == 4 && raw.Any(b => b < 32 || b > 126))
+            {
+                return string.Join('.', raw);
+            }
+
+            if (raw.Length == 6)
+            {
+                return string.Join(':', raw.Select(b => b.ToString("x2")));
+            }
+        }
+
+        return SnmpValues.Format(variable.Data);
     }
 
     private static List<InterfaceReading> BuildInterfaces(IEnumerable<Variable> ifTable, IEnumerable<Variable> ifX)

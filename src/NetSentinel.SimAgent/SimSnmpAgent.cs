@@ -14,6 +14,7 @@ public sealed class SimSnmpAgent : IDisposable
 {
     private readonly int _requestedPort;
     private readonly string _community;
+    private readonly SimDevice _device;
     private readonly DateTime _started = DateTime.UtcNow;
     private readonly List<SimObject> _entries = new();
     private UdpClient? _udp;
@@ -21,11 +22,19 @@ public sealed class SimSnmpAgent : IDisposable
     private Task? _loop;
 
     public SimSnmpAgent(int port = 0, string community = "public")
+        : this(port, community, SimCatalog.Core)
+    {
+    }
+
+    public SimSnmpAgent(int port, string community, SimDevice device)
     {
         _requestedPort = port;
         _community = community;
+        _device = device;
         BuildMib();
     }
+
+    public string SysName => _device.SysName;
 
     public int Port { get; private set; }
 
@@ -344,22 +353,30 @@ public sealed class SimSnmpAgent : IDisposable
 
     private void BuildMib()
     {
-        Add("1.3.6.1.2.1.1.1.0", () => new OctetString("NetSentinel Simulator, virtual router"));
+        Add("1.3.6.1.2.1.1.1.0", () => new OctetString(_device.SysDescr));
         Add("1.3.6.1.2.1.1.2.0", () => new ObjectIdentifier("1.3.6.1.4.1.99999"));
         Add("1.3.6.1.2.1.1.3.0", () => new TimeTicks(Uptime()));
         Add("1.3.6.1.2.1.1.4.0", () => new OctetString("ops@netsentinel.local"));
-        Add("1.3.6.1.2.1.1.5.0", () => new OctetString("sim-core-01"));
-        Add("1.3.6.1.2.1.1.6.0", () => new OctetString("Loopback lab"));
-        Add("1.3.6.1.2.1.2.1.0", () => new Integer32(4));
-        Add("1.3.6.1.4.1.99999.1.0", () => new Gauge32(Temperature()));
-
-        var interfaces = new[]
+        Add("1.3.6.1.2.1.1.5.0", () => new OctetString(_device.SysName));
+        Add("1.3.6.1.2.1.1.6.0", () => new OctetString(_device.Location));
+        Add("1.3.6.1.2.1.2.1.0", () => new Integer32(_device.Ports.Count));
+        if (_device.IncludeGauge)
         {
-            new SimInterface(1, "lo", "lo", "local", 24, 1_000_000_000, 1000, 1, 1, 1_000, 800),
-            new SimInterface(2, "Gi0/0", "Gi0/0", "uplink", 6, 1_000_000_000, 1000, 1, 1, 12_500_000, 3_000_000),
-            new SimInterface(3, "Gi0/1", "Gi0/1", "access", 6, 1_000_000_000, 1000, 1, 1, 500_000, 200_000),
-            new SimInterface(4, "Gi0/2", "Gi0/2", "spare", 6, 100_000_000, 100, 1, 2, 0, 0)
-        };
+            Add("1.3.6.1.4.1.99999.1.0", () => new Gauge32(Temperature()));
+        }
+
+        var interfaces = _device.Ports.Select(port => new SimInterface(
+            port.Index,
+            port.Name,
+            port.Name,
+            port.Alias,
+            port.Name == "lo" ? 24 : 6,
+            port.SpeedBps,
+            port.HighSpeedMbps,
+            1,
+            port.Oper,
+            port.InBytesPerSecond,
+            port.OutBytesPerSecond)).ToArray();
 
         foreach (var iface in interfaces)
         {
@@ -378,6 +395,37 @@ public sealed class SimSnmpAgent : IDisposable
             Add($"1.3.6.1.2.1.31.1.1.1.10.{index}", () => new Counter64(Octets(iface.OutBytesPerSecond)));
             Add($"1.3.6.1.2.1.31.1.1.1.15.{index}", () => new Gauge32((uint)iface.HighSpeedMbps));
             Add($"1.3.6.1.2.1.31.1.1.1.18.{index}", () => new OctetString(iface.Alias));
+            Add($"1.0.8802.1.1.2.1.3.7.1.3.{index}", () => new OctetString(iface.Name));
+        }
+
+        var neighborIndex = 1;
+        foreach (var neighbor in _device.Lldp)
+        {
+            var suffix = $"0.{neighbor.LocalPort}.{neighborIndex}";
+            Add($"1.0.8802.1.1.2.1.4.1.1.5.{suffix}", () => new OctetString(neighbor.RemoteName));
+            Add($"1.0.8802.1.1.2.1.4.1.1.7.{suffix}", () => new OctetString(neighbor.RemotePort));
+            Add($"1.0.8802.1.1.2.1.4.1.1.9.{suffix}", () => new OctetString(neighbor.RemoteName));
+            if (!string.IsNullOrEmpty(neighbor.RemoteAddress))
+            {
+                Add($"1.0.8802.1.1.2.1.4.1.1.8.{suffix}", () => new OctetString(neighbor.RemoteAddress));
+            }
+
+            neighborIndex++;
+        }
+
+        neighborIndex = 1;
+        foreach (var neighbor in _device.Cdp)
+        {
+            var suffix = $"{neighbor.LocalPort}.{neighborIndex}";
+            Add($"1.3.6.1.4.1.9.9.23.1.2.1.1.6.{suffix}", () => new OctetString(neighbor.RemoteName));
+            Add($"1.3.6.1.4.1.9.9.23.1.2.1.1.7.{suffix}", () => new OctetString(neighbor.RemotePort));
+            if (IPAddress.TryParse(neighbor.RemoteAddress, out var address) && address.GetAddressBytes().Length == 4)
+            {
+                var bytes = address.GetAddressBytes();
+                Add($"1.3.6.1.4.1.9.9.23.1.2.1.1.4.{suffix}", () => new OctetString(bytes));
+            }
+
+            neighborIndex++;
         }
 
         _entries.Sort((left, right) => left.Oid.CompareTo(right.Oid));

@@ -20,6 +20,7 @@ public sealed class AppDbContext : DbContext
     public DbSet<AlertEvent> Alerts => Set<AlertEvent>();
     public DbSet<AlertRule> Rules => Set<AlertRule>();
     public DbSet<AppSetting> Settings => Set<AppSetting>();
+    public DbSet<DeviceLink> Links => Set<DeviceLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -27,6 +28,9 @@ public sealed class AppDbContext : DbContext
         {
             entity.Property(d => d.Name).HasMaxLength(80);
             entity.Property(d => d.Host).HasMaxLength(255);
+            entity.Property(d => d.GroupName).HasMaxLength(80);
+            entity.Property(d => d.Location).HasMaxLength(80);
+            entity.Property(d => d.Tags).HasMaxLength(200);
             entity.HasIndex(d => new { d.Enabled, d.NextPollAt });
             entity.HasMany(d => d.CustomOids)
                 .WithOne(o => o.Device)
@@ -79,6 +83,16 @@ public sealed class AppDbContext : DbContext
             entity.Property(r => r.Name).HasMaxLength(80);
             entity.Property(r => r.Metric).HasMaxLength(40);
         });
+
+        modelBuilder.Entity<DeviceLink>(entity =>
+        {
+            entity.ToTable("DeviceLinks");
+            entity.Property(link => link.Kind).HasMaxLength(16);
+            entity.Property(link => link.LocalPort).HasMaxLength(80);
+            entity.Property(link => link.RemotePort).HasMaxLength(80);
+            entity.HasIndex(link => new { link.SourceDeviceId, link.Kind });
+            entity.HasIndex(link => new { link.SourceDeviceId, link.TargetDeviceId, link.Kind }).IsUnique();
+        });
     }
 }
 
@@ -102,10 +116,87 @@ public sealed class SqlitePragmaInterceptor : DbConnectionInterceptor
     }
 }
 
+public static class SchemaUpgrader
+{
+    public static async Task ApplyAsync(AppDbContext db, CancellationToken cancellationToken = default)
+    {
+        var connection = db.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        var columns = await ReadColumnNames(connection, "Devices", cancellationToken);
+        if (columns.Count == 0)
+        {
+            return;
+        }
+
+        await AddColumn(connection, columns, "GroupName", "ALTER TABLE Devices ADD COLUMN GroupName TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumn(connection, columns, "Location", "ALTER TABLE Devices ADD COLUMN Location TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumn(connection, columns, "Tags", "ALTER TABLE Devices ADD COLUMN Tags TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumn(connection, columns, "ParentDeviceId", "ALTER TABLE Devices ADD COLUMN ParentDeviceId INTEGER NULL", cancellationToken);
+        await AddColumn(connection, columns, "MapX", "ALTER TABLE Devices ADD COLUMN MapX REAL NULL", cancellationToken);
+        await AddColumn(connection, columns, "MapY", "ALTER TABLE Devices ADD COLUMN MapY REAL NULL", cancellationToken);
+
+        foreach (var sql in new[]
+        {
+            """
+            CREATE TABLE IF NOT EXISTS DeviceLinks (
+                Id INTEGER NOT NULL CONSTRAINT PK_DeviceLinks PRIMARY KEY AUTOINCREMENT,
+                SourceDeviceId INTEGER NOT NULL,
+                TargetDeviceId INTEGER NOT NULL,
+                Kind TEXT NOT NULL,
+                LocalIfIndex INTEGER NULL,
+                LocalPort TEXT NOT NULL DEFAULT '',
+                RemotePort TEXT NOT NULL DEFAULT '',
+                Utilization REAL NULL,
+                UpdatedAt TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS IX_DeviceLinks_SourceDeviceId_Kind ON DeviceLinks (SourceDeviceId, Kind)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS IX_DeviceLinks_SourceDeviceId_TargetDeviceId_Kind ON DeviceLinks (SourceDeviceId, TargetDeviceId, Kind)"
+        })
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static async Task<HashSet<string>> ReadColumnNames(System.Data.Common.DbConnection connection, string table, CancellationToken cancellationToken)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT name FROM pragma_table_info('{table}')";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    private static async Task AddColumn(System.Data.Common.DbConnection connection, HashSet<string> columns, string name, string sql, CancellationToken cancellationToken)
+    {
+        if (columns.Contains(name))
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        columns.Add(name);
+    }
+}
+
 public static class DbInitializer
 {
     public static async Task SeedAsync(AppDbContext db, IConfiguration configuration, CancellationToken cancellationToken = default)
     {
+        await SchemaUpgrader.ApplyAsync(db, cancellationToken);
         if (await db.Settings.AnyAsync(cancellationToken))
         {
             return;

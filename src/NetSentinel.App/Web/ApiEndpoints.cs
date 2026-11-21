@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using NetSentinel.Core;
 using NetSentinel.Data;
@@ -65,6 +66,39 @@ public static class ApiEndpoints
 
         api.MapDelete("/devices/{id:int}", async (int id, DeviceAdminService devices) =>
             await devices.DeleteAsync(id) ? Results.NoContent() : Results.NotFound());
+
+        api.MapGet("/devices/import/template", () =>
+            Results.File(Encoding.UTF8.GetBytes(CsvDevices.Template), "text/csv", "netsentinel-devices-template.csv"));
+
+        api.MapGet("/devices/export", async (ImportService imports, CancellationToken cancellationToken) =>
+            Results.File(Encoding.UTF8.GetBytes(await imports.ExportAsync(cancellationToken)), "text/csv", "netsentinel-devices.csv"));
+
+        api.MapPost("/devices/import/preview", async (HttpRequest request, ImportService imports, CancellationToken cancellationToken) =>
+            Results.Json(await imports.PreviewAsync(await ReadCsvAsync(request, cancellationToken), cancellationToken)));
+
+        api.MapPost("/devices/import", async (ImportCommitRequest body, ImportService imports, CancellationToken cancellationToken) =>
+        {
+            var result = await imports.CommitAsync(body.Csv, body.DuplicateMode, cancellationToken);
+            return result.Error is null ? Results.Json(result) : Results.BadRequest(new { errors = new[] { result.Error } });
+        });
+
+        api.MapGet("/map", async (MapService map, CancellationToken cancellationToken) =>
+            Results.Json(await map.BuildAsync(cancellationToken)));
+
+        api.MapPost("/map/positions", async (MapPositionBatch batch, MapService map, CancellationToken cancellationToken) =>
+        {
+            await map.SavePositionsAsync(batch.Positions ?? new List<MapPosition>(), cancellationToken);
+            return Results.NoContent();
+        });
+
+        api.MapPost("/map/links", async (ManualLinkRequest body, MapService map, CancellationToken cancellationToken) =>
+        {
+            var (link, error) = await map.AddManualLinkAsync(body.FromId, body.ToId, cancellationToken);
+            return error is null ? Results.Json(new { id = link!.Id }) : Results.BadRequest(new { errors = new[] { error } });
+        });
+
+        api.MapDelete("/map/links/{id:int}", async (int id, MapService map, CancellationToken cancellationToken) =>
+            await map.DeleteManualLinkAsync(id, cancellationToken) ? Results.NoContent() : Results.NotFound());
 
         api.MapGet("/devices/{id:int}/response", async (int id, int? minutes, AppDbContext db) =>
         {
@@ -313,6 +347,25 @@ public static class ApiEndpoints
         }
 
         return errors;
+    }
+
+    private static async Task<string> ReadCsvAsync(HttpRequest request, CancellationToken cancellationToken)
+    {
+        if (request.HasFormContentType)
+        {
+            var form = await request.ReadFormAsync(cancellationToken);
+            var file = form.Files.GetFile("file");
+            if (file is not null)
+            {
+                using var reader = new StreamReader(file.OpenReadStream());
+                return await reader.ReadToEndAsync(cancellationToken);
+            }
+
+            return form["csv"].ToString();
+        }
+
+        using var body = new StreamReader(request.Body);
+        return await body.ReadToEndAsync(cancellationToken);
     }
 
     private static int ClampMinutes(int? minutes) => Math.Clamp(minutes ?? 60, 5, 10080);

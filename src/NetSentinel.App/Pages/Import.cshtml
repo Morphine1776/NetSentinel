@@ -1,0 +1,60 @@
+@page "/import"
+@{
+    ViewData["Title"] = "Import";
+}
+<header class="top">
+    <div>
+        <p class="eyebrow">Inventory</p>
+        <h1>Import devices</h1>
+        <p class="lede">Upload a CSV of endpoints. Nothing is written until you confirm the preview. Headers can be in any order and any case. Up to 1,000 rows.</p>
+    </div>
+    <div class="actions">
+        <a class="btn" href="/api/devices/import/template">Download template</a>
+        <a class="btn" href="/api/devices/export">Export devices</a>
+    </div>
+</header>
+
+<section class="panel">
+    <form id="import-form" class="stack">
+        <label>
+            CSV file
+            <input id="import-file" type="file" accept=".csv,text/csv" required />
+        </label>
+        <div class="actions">
+            <button class="btn primary" type="submit">Preview</button>
+        </div>
+    </form>
+    <p id="import-file-error" class="banner bad" hidden></p>
+</section>
+
+<section id="import-preview" class="panel" hidden>
+    <div class="panel-head">
+        <h2>Preview</h2>
+        <p id="import-summary" class="hint"></p>
+    </div>
+    <div class="table-wrap flat">
+        <table class="responsive">
+            <thead>
+                <tr>
+                    <th>Line</th>
+                    <th>Status</th>
+                    <th>Name</th>
+                    <th>Host</th>
+                    <th>Group</th>
+                    <th>Parent</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody id="import-rows"></tbody>
+        </table>
+    </div>
+    <form id="import-commit" class="commit-bar">
+        <fieldset>
+            <legend>Existing devices</legend>
+            <label class="check"><input type="radio" name="duplicateMode" value="skip" checked /> <span>Skip duplicates</span></label>
+            <label class="check"><input type="radio" name="duplicateMode" value="update" /> <span>Update duplicates</span></label>
+        </fieldset>
+        <button class="btn primary" type="submit">Import ready rows</button>
+        <p id="import-result" class="hint"></p>
+    </form>
+</section>

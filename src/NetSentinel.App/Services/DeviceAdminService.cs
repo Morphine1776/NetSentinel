@@ -28,6 +28,10 @@ public sealed class DeviceInput
     public string? V3PrivPassword { get; set; }
     public int PollIntervalSeconds { get; set; } = 60;
     public bool Enabled { get; set; } = true;
+    public string? GroupName { get; set; }
+    public string? Location { get; set; }
+    public string? Tags { get; set; }
+    public int? ParentDeviceId { get; set; }
     public List<CustomOidInput> CustomOids { get; set; } = new();
 }
 
@@ -98,6 +102,37 @@ public sealed class DeviceAdminService
         if (input.Name.Length is < 1 or > 80)
         {
             errors.Add("Name must be 1–80 characters.");
+        }
+
+        if ((input.GroupName ?? "").Trim().Length > 80)
+        {
+            errors.Add("Group must be 80 characters or fewer.");
+        }
+
+        if ((input.Location ?? "").Trim().Length > 80)
+        {
+            errors.Add("Location must be 80 characters or fewer.");
+        }
+
+        if ((input.Tags ?? "").Trim().Length > 200)
+        {
+            errors.Add("Tags must be 200 characters or fewer.");
+        }
+
+        if (input.ParentDeviceId is int parentId)
+        {
+            if (existing?.Id == parentId)
+            {
+                errors.Add("A device cannot be its own parent.");
+            }
+            else if (!await _db.Devices.AnyAsync(device => device.Id == parentId, cancellationToken))
+            {
+                errors.Add("The parent device was not found.");
+            }
+            else if (existing is not null && await ParentCycleAsync(existing.Id, parentId, cancellationToken))
+            {
+                errors.Add("That parent would create a cycle.");
+            }
         }
 
         if (input.Host.Length is < 1 or > 255)
@@ -215,6 +250,10 @@ public sealed class DeviceAdminService
         device.V3PrivPassword = input.V3PrivPassword ?? "";
         device.PollIntervalSeconds = input.PollIntervalSeconds;
         device.Enabled = input.Enabled;
+        device.GroupName = (input.GroupName ?? "").Trim();
+        device.Location = (input.Location ?? "").Trim();
+        device.Tags = CsvDevices.NormalizeTags(input.Tags ?? "");
+        device.ParentDeviceId = input.ParentDeviceId;
         device.UpdatedAt = now;
         device.NextPollAt = now;
 
@@ -270,6 +309,8 @@ public sealed class DeviceAdminService
         await _db.InterfaceStates.Where(s => s.DeviceId == id).ExecuteDeleteAsync(cancellationToken);
         await _db.Alerts.Where(a => a.DeviceId == id).ExecuteDeleteAsync(cancellationToken);
         await _db.Rules.Where(r => r.DeviceId == id).ExecuteDeleteAsync(cancellationToken);
+        await _db.Links.Where(link => link.SourceDeviceId == id || link.TargetDeviceId == id).ExecuteDeleteAsync(cancellationToken);
+        await _db.Devices.Where(device => device.ParentDeviceId == id).ExecuteUpdateAsync(setters => setters.SetProperty(device => device.ParentDeviceId, (int?)null), cancellationToken);
         _db.Devices.Remove(device);
         await _db.SaveChangesAsync(cancellationToken);
         return true;
@@ -301,4 +342,29 @@ public sealed class DeviceAdminService
 
     private static string Normalize(string? value, string fallback)
         => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+
+    private async Task<bool> ParentCycleAsync(int deviceId, int parentId, CancellationToken cancellationToken)
+    {
+        var parents = await _db.Devices.AsNoTracking()
+            .Select(device => new { device.Id, device.ParentDeviceId })
+            .ToDictionaryAsync(device => device.Id, device => device.ParentDeviceId, cancellationToken);
+        var cursor = parentId;
+        var guard = 0;
+        while (parents.TryGetValue(cursor, out var next) && guard++ < parents.Count + 1)
+        {
+            if (cursor == deviceId)
+            {
+                return true;
+            }
+
+            if (next is not int parent)
+            {
+                return false;
+            }
+
+            cursor = parent;
+        }
+
+        return cursor == deviceId;
+    }
 }

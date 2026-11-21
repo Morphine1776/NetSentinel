@@ -31,8 +31,27 @@ public sealed class Device
     public DateTime? LastPollAt { get; set; }
     public string? LastError { get; set; }
     public int ConsecutiveFailures { get; set; }
+    public string GroupName { get; set; } = "";
+    public string Location { get; set; } = "";
+    public string Tags { get; set; } = "";
+    public int? ParentDeviceId { get; set; }
+    public double? MapX { get; set; }
+    public double? MapY { get; set; }
 
     public List<CustomOid> CustomOids { get; set; } = new();
+}
+
+public sealed class DeviceLink
+{
+    public int Id { get; set; }
+    public int SourceDeviceId { get; set; }
+    public int TargetDeviceId { get; set; }
+    public string Kind { get; set; } = "manual";
+    public int? LocalIfIndex { get; set; }
+    public string LocalPort { get; set; } = "";
+    public string RemotePort { get; set; } = "";
+    public double? Utilization { get; set; }
+    public DateTime UpdatedAt { get; set; }
 }
 
 public sealed class CustomOid

@@ -1,0 +1,80 @@
+@page "/alerts"
+@model AlertsModel
+@{
+    ViewData["Title"] = "Alerts";
+    ViewData["Refresh"] = "45";
+}
+<header class="top">
+    <div>
+        <p class="eyebrow">Signals</p>
+        <h1>Alerts</h1>
+    </div>
+    <div class="chips">
+        <a class="chip @(Model.State == "open" ? "on" : "")" href="/alerts">Open</a>
+        <a class="chip @(Model.State == "all" ? "on" : "")" href="/alerts?state=all">All</a>
+    </div>
+</header>
+
+@if (Model.Alerts.Count == 0)
+{
+    <section class="empty">
+        <h2>@(Model.State == "open" ? "No open alerts" : "No alerts yet")</h2>
+        <p>Device down, interface down, reboots, and threshold rules show up here. A device is marked down after the configured number of failed polls.</p>
+    </section>
+}
+else
+{
+    <div class="table-wrap">
+        <table class="responsive">
+            <thead>
+                <tr>
+                    <th>Severity</th>
+                    <th>Alert</th>
+                    <th>Device</th>
+                    <th>State</th>
+                    <th>When</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var row in Model.Alerts)
+            {
+                var alert = row.Alert;
+                <tr>
+                    <td data-label="Severity"><span class="pill @TextFormat.Severity(alert.Severity)">@TextFormat.Severity(alert.Severity)</span></td>
+                    <td data-label="Alert">
+                        <div>@alert.Message</div>
+                        <div class="sub">@TextFormat.Kind(alert.Kind)</div>
+                    </td>
+                    <td data-label="Device">
+                        @if (alert.DeviceId is int id)
+                        {
+                            <a href="/devices/@id">@row.DeviceName</a>
+                        }
+                        else
+                        {
+                            @row.DeviceName
+                        }
+                    </td>
+                    <td data-label="State">@alert.State</td>
+                    <td data-label="When" class="mono">@TextFormat.When(alert.CreatedAt)</td>
+                    <td data-label="Actions" class="row-actions">
+                        @if (alert.State == AlertState.Open)
+                        {
+                            <form method="post" asp-page-handler="Acknowledge" asp-route-id="@alert.Id" asp-route-state="@Model.State">
+                                <button class="btn tiny" type="submit">Ack</button>
+                            </form>
+                        }
+                        @if (alert.State != AlertState.Resolved)
+                        {
+                            <form method="post" asp-page-handler="Resolve" asp-route-id="@alert.Id" asp-route-state="@Model.State">
+                                <button class="btn tiny" type="submit">Resolve</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}

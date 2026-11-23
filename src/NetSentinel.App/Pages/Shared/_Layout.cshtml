@@ -1,0 +1,61 @@
+@inject AppDbContext Db
+@{
+    var path = Context.Request.Path.Value ?? "/";
+    var openAlerts = Db.Alerts.Count(alert => alert.State != AlertState.Resolved);
+    string Active(string prefix)
+    {
+        if (prefix == "/")
+        {
+            return path == "/" || path.StartsWith("/devices", StringComparison.OrdinalIgnoreCase) ? "active" : "";
+        }
+
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? "active" : "";
+    }
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>@(ViewData["Title"] ?? "NetSentinel") · NetSentinel</title>
+    <link rel="icon" href="~/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body data-refresh="@ViewData["Refresh"]" data-device="@ViewData["DeviceId"]" data-iface="@ViewData["Iface"]" data-custom="@ViewData["Custom"]" data-range="@ViewData["Range"]">
+    <div class="shell">
+        <aside>
+            <a class="brand" href="/">
+                <span class="mark" aria-hidden="true"></span>
+                <span>
+                    <strong>NetSentinel</strong>
+                    <small>SNMP watch</small>
+                </span>
+            </a>
+            <nav>
+                <a class="@Active("/")" href="/">Devices</a>
+                <a class="@Active("/map")" href="/map">Map</a>
+                <a class="@Active("/import")" href="/import">Import</a>
+                <a class="@Active("/alerts")" href="/alerts">Alerts @if (openAlerts > 0) {<span class="count">@openAlerts</span>}</a>
+                <a class="@Active("/traps")" href="/traps">Traps</a>
+                <a class="@Active("/settings")" href="/settings">Settings</a>
+            </nav>
+            <div class="aside-foot">
+                @if (User.Identity?.IsAuthenticated == true)
+                {
+                    <span class="who">@User.Identity.Name</span>
+                    <form method="post" asp-page="/Logout">
+                        <button class="btn ghost" type="submit">Sign out</button>
+                    </form>
+                }
+            </div>
+        </aside>
+        <main>
+            @RenderBody()
+        </main>
+    </div>
+    <script src="~/js/chart.umd.min.js"></script>
+    <script src="~/js/app.js"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

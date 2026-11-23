@@ -1,0 +1,159 @@
+@page "/devices/{id:int}"
+@model NetSentinel.Pages.Devices.DetailModel
+@{
+    ViewData["Title"] = Model.Device.Name;
+    ViewData["Refresh"] = "45";
+    ViewData["DeviceId"] = Model.Device.Id;
+    ViewData["Iface"] = Model.SelectedInterface;
+    ViewData["Custom"] = Model.SelectedCustom;
+    ViewData["Range"] = Model.Range;
+    var device = Model.Device;
+}
+<header class="top">
+    <div>
+        <p class="eyebrow"><a href="/">Devices</a> / @TextFormat.Version(device.Version)</p>
+        <h1>
+            <span class="lamp @TextFormat.Lamp(device)"></span>
+            @device.Name
+        </h1>
+        <p class="lede mono">@device.Host:@device.Port · @TextFormat.Reachability(device)</p>
+    </div>
+    <a class="btn" href="/devices/edit/@device.Id">Edit</a>
+</header>
+
+<section class="identity">
+    <div>
+        <span>sysName</span>
+        <strong>@(device.LastSysName ?? "—")</strong>
+    </div>
+    <div>
+        <span>Uptime</span>
+        <strong class="mono">@TextFormat.Uptime(device.LastSysUpTimeTicks)</strong>
+    </div>
+    <div>
+        <span>Response</span>
+        <strong class="mono">@TextFormat.Ms(device.LastResponseMs)</strong>
+    </div>
+    <div>
+        <span>Ping</span>
+        <strong>@TextFormat.Ping(device.LastPingOk)</strong>
+    </div>
+    <div>
+        <span>Last poll</span>
+        <strong class="mono">@TextFormat.When(device.LastPollAt)</strong>
+    </div>
+    <div class="wide">
+        <span>sysDescr</span>
+        <strong>@(device.LastSysDescr ?? "Waiting for the first SNMP response.")</strong>
+    </div>
+    @if (!string.IsNullOrEmpty(device.LastError))
+    {
+        <div class="wide">
+            <span>Last error</span>
+            <strong class="bad-text">@device.LastError</strong>
+        </div>
+    }
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Response time</h2>
+        <div class="chips">
+            @foreach (var minutes in new[] { 60, 360, 1440, 10080 })
+            {
+                var label = minutes switch { 60 => "1h", 360 => "6h", 1440 => "24h", _ => "7d" };
+                <a class="chip @(Model.Range == minutes ? "on" : "")" href="?range=@minutes&iface=@Model.SelectedInterface&custom=@Model.SelectedCustom">@label</a>
+            }
+        </div>
+    </div>
+    <div class="chart-box">
+        <canvas id="response-chart"></canvas>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Interfaces</h2>
+        <p class="hint">Rates come from counter deltas. 64-bit HC counters are used when the device provides them.</p>
+    </div>
+    @if (Model.Interfaces.Count == 0)
+    {
+        <p class="empty-inline">No interface table yet. It appears after a successful poll.</p>
+    }
+    else
+    {
+        <div class="table-wrap flat">
+            <table class="responsive">
+                <thead>
+                    <tr>
+                        <th>Interface</th>
+                        <th>Admin</th>
+                        <th>Oper</th>
+                        <th>Speed</th>
+                        <th>In</th>
+                        <th>Out</th>
+                        <th>Util</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var iface in Model.Interfaces)
+                {
+                    var selected = iface.IfIndex == Model.SelectedInterface;
+                    <tr class="@(selected ? "selected" : "")" data-select-iface="@iface.IfIndex">
+                        <td data-label="Interface">
+                            <div>@iface.IfDescr</div>
+                            <div class="sub mono">if @iface.IfIndex@(string.IsNullOrEmpty(iface.IfAlias) ? "" : " · " + iface.IfAlias)</div>
+                        </td>
+                        <td data-label="Admin">@TextFormat.Admin(iface.AdminStatus)</td>
+                        <td data-label="Oper"><span class="pill @TextFormat.Oper(iface.OperStatus)">@TextFormat.Oper(iface.OperStatus)</span></td>
+                        <td data-label="Speed" class="mono">@TextFormat.Speed(iface.SpeedBps)</td>
+                        <td data-label="In" class="mono">@TextFormat.Bps(iface.InBps)</td>
+                        <td data-label="Out" class="mono">@TextFormat.Bps(iface.OutBps)</td>
+                        <td data-label="Util" class="mono">@TextFormat.Percent(iface.InUtil) / @TextFormat.Percent(iface.OutUtil)</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <h3 class="chart-title">Bandwidth <span class="hint">Mbps, selected interface</span></h3>
+        <p id="bandwidth-note" class="hint" hidden>Bandwidth appears after the second successful poll, once a counter delta exists.</p>
+        <div class="chart-box">
+            <canvas id="bandwidth-chart"></canvas>
+        </div>
+    }
+</section>
+
+@if (device.CustomOids.Count > 0)
+{
+    <section class="panel">
+        <div class="panel-head">
+            <h2>Custom OIDs</h2>
+        </div>
+        <div class="table-wrap flat">
+            <table class="responsive">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>OID</th>
+                        <th>Value</th>
+                        <th>Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var oid in device.CustomOids)
+                {
+                    <tr class="@(oid.Id == Model.SelectedCustom ? "selected" : "")" data-select-custom="@oid.Id">
+                        <td data-label="Name">@oid.Name</td>
+                        <td data-label="OID" class="mono">@oid.Oid</td>
+                        <td data-label="Value" class="mono">@(oid.LastRaw ?? "—") @(oid.Unit)</td>
+                        <td data-label="Rate" class="mono">@(oid.LastRate is null ? "—" : oid.LastRate.Value.ToString("0.##"))</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-box">
+            <canvas id="custom-chart"></canvas>
+        </div>
+    </section>
+}

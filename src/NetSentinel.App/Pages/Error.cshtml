@@ -1,0 +1,22 @@
+@page "/error"
+@model ErrorModel
+@{
+    ViewData["Title"] = "Something went wrong";
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Error · NetSentinel</title>
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body class="login-body">
+    <main class="login-card">
+        <h1>The watch hit an error</h1>
+        <p class="lede">The request did not finish. Check the service log, then try the page again.</p>
+        <a class="btn primary" href="/">Back to devices</a>
+    </main>
+</body>
+</html>

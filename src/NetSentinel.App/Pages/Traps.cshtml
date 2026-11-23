@@ -1,0 +1,50 @@
+@page "/traps"
+@model TrapsModel
+@{
+    ViewData["Title"] = "Traps";
+    ViewData["Refresh"] = "45";
+}
+<header class="top">
+    <div>
+        <p class="eyebrow">Receiver</p>
+        <h1>Traps</h1>
+        <p class="lede">
+            @if (Model.Settings.TrapEnabled)
+            {
+                <text>Listening on UDP <span class="mono">@Model.Settings.TrapPort</span>.</text>
+            }
+            else
+            {
+                <text>The trap listener is off. Turn it on in settings.</text>
+            }
+        </p>
+    </div>
+</header>
+
+@if (Model.Traps.Count == 0)
+{
+    <section class="empty">
+        <h2>No traps received</h2>
+        <p>Point devices at this host’s UDP trap port. v1 and v2c traps are stored as they arrive. v3 traps are decoded when the user matches a device configured here. Informs are acknowledged.</p>
+    </section>
+}
+else
+{
+    <div class="trap-list">
+        @foreach (var trap in Model.Traps)
+        {
+            <article class="trap">
+                <header>
+                    <span class="mono">@trap.TrapOid</span>
+                    <span class="sub">@TextFormat.When(trap.ReceivedAt)</span>
+                </header>
+                <p>@trap.Summary</p>
+                <p class="sub mono">@trap.Source · @trap.Version · @trap.SecurityName</p>
+                @if (!string.IsNullOrWhiteSpace(trap.Varbinds))
+                {
+                    <pre>@trap.Varbinds</pre>
+                }
+            </article>
+        }
+    </div>
+}

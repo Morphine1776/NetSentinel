@@ -1,0 +1,48 @@
+@page "/map"
+@model MapModel
+@{
+    ViewData["Title"] = "Map";
+}
+<header class="top">
+    <div>
+        <p class="eyebrow">Topology</p>
+        <h1>Network map</h1>
+        <p class="lede">Links come from LLDP and CDP when a neighbor matches a device you already monitor, plus parent and manual links. Drag a node to keep its place.</p>
+    </div>
+    <div class="chips" id="map-groups">
+        <button class="chip on" type="button" data-group="none">No groups</button>
+        <button class="chip" type="button" data-group="group">By group</button>
+        <button class="chip" type="button" data-group="location">By location</button>
+    </div>
+</header>
+
+<section class="panel map-panel">
+    <div id="net-map"></div>
+    <form id="map-link-form" class="map-form">
+        <label>
+            From
+            <select id="map-from" required>
+                @foreach (var device in Model.Devices)
+                {
+                    <option value="@device.Id">@device.Name</option>
+                }
+            </select>
+        </label>
+        <label>
+            To
+            <select id="map-to" required>
+                @foreach (var device in Model.Devices)
+                {
+                    <option value="@device.Id">@device.Name</option>
+                }
+            </select>
+        </label>
+        <button class="btn" type="submit">Add manual link</button>
+        <button class="btn ghost" type="button" id="map-remove" hidden>Remove selected manual link</button>
+        <span id="map-note" class="hint"></span>
+    </form>
+</section>
+@section Scripts {
+    <script src="~/js/cytoscape.min.js"></script>
+    <script src="~/js/map.js"></script>
+}

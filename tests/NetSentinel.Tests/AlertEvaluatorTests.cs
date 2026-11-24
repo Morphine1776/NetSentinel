@@ -181,6 +181,26 @@ public class AlertEvaluatorTests
     }
 
     [Fact]
+    public void Unmonitored_interfaces_do_not_open_down_or_threshold_alerts()
+    {
+        var rules = new[] { new AlertRuleModel(3, "hot", "in_util", null, ThresholdOperator.GreaterThan, 10, AlertSeverity.Warning) };
+        var current = Snapshot(true, new InterfaceSnapshot(4, "Gi1/0/4", "Gi1/0/4", 1, 2, null, null, 99, 80, false));
+        var transitions = AlertEvaluator.Evaluate(Scope, "core", null, current, 0, 2, rules, Empty());
+        Assert.Empty(transitions);
+    }
+
+    [Fact]
+    public void Unmonitoring_resolves_an_open_interface_alert_without_an_up_notice()
+    {
+        var current = Snapshot(true, new InterfaceSnapshot(2, "Gi0/2", "Gi0/2", 1, 2, null, null, null, null, false));
+        var transitions = AlertEvaluator.Evaluate(Scope, "core", null, current, 0, 2, Array.Empty<AlertRuleModel>(), Keys($"{Scope}:if:2:down"));
+        var resolved = Assert.Single(transitions);
+        Assert.Equal(AlertTransitionType.Resolve, resolved.Type);
+        Assert.Equal(AlertKind.InterfaceDown, resolved.Kind);
+        Assert.Contains("no longer monitored", resolved.Message);
+    }
+
+    [Fact]
     public void A_disabled_rule_clears_because_it_is_not_evaluated()
     {
         var current = Snapshot(true, response: 10);

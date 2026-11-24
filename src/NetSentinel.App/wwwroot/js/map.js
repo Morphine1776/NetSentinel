@@ -3,6 +3,7 @@
   if (!root || typeof cytoscape === "undefined") return;
 
   let grouping = "none";
+  let showUnmonitored = false;
   let selectedManual = null;
   let dragging = false;
   let moved = false;
@@ -150,7 +151,8 @@
 
   function refresh(relayout) {
     if (dragging) return;
-    fetch("/api/map").then(function (response) { return response.json(); }).then(function (payload) {
+    const query = showUnmonitored ? "?showUnmonitored=true" : "";
+    fetch("/api/map" + query).then(function (response) { return response.json(); }).then(function (payload) {
       apply(payload, relayout);
     }).catch(function () {});
   }
@@ -182,6 +184,15 @@
       if (removeButton) removeButton.hidden = true;
     }
   });
+
+  const unmonitoredButton = document.getElementById("map-unmonitored");
+  if (unmonitoredButton) {
+    unmonitoredButton.addEventListener("click", function () {
+      showUnmonitored = !showUnmonitored;
+      unmonitoredButton.classList.toggle("on", showUnmonitored);
+      refresh(false);
+    });
+  }
 
   document.getElementById("map-groups").addEventListener("click", function (event) {
     const button = event.target.closest("[data-group]");

@@ -49,7 +49,8 @@ public sealed record InterfaceSnapshot(
     double? InBps,
     double? OutBps,
     double? InUtil,
-    double? OutUtil);
+    double? OutUtil,
+    bool Monitored = true);
 
 public sealed record CustomSnapshot(
     int CustomOidId,
@@ -156,6 +157,22 @@ public static class AlertEvaluator
             {
                 seen.Add(iface.IfIndex);
                 var key = InterfaceDownKey(scope, iface.IfIndex);
+                if (!iface.Monitored)
+                {
+                    if (openKeys.Contains(key))
+                    {
+                        transitions.Add(Resolve(
+                            key,
+                            AlertKind.InterfaceDown,
+                            AlertSeverity.Warning,
+                            $"Interface {Label(iface)} on {deviceName} is no longer monitored.",
+                            iface.IfIndex,
+                            null));
+                    }
+
+                    continue;
+                }
+
                 if (IsOperDown(iface) && IsAdminUp(iface))
                 {
                     fired.Add(key);
@@ -211,7 +228,7 @@ public static class AlertEvaluator
                 {
                     foreach (var iface in current.Interfaces)
                     {
-                        if (!FilterMatches(rule.InterfaceFilter, iface))
+                        if (!iface.Monitored || !FilterMatches(rule.InterfaceFilter, iface))
                         {
                             continue;
                         }

@@ -105,6 +105,34 @@ public class CsvDeviceTests
     }
 
     [Fact]
+    public void Interface_filter_columns_are_optional_and_round_trip()
+    {
+        const string csv = "name,host,community,if_exclude,if_pattern,if_exclude_admin_down,if_require_alias\nCore,10.2.2.2,public,Gi1/0/*,glob,yes,no\n";
+        var parsed = Assert.Single(CsvDevices.Parse(csv));
+        Assert.Equal("Gi1/0/*", parsed.IfExclude);
+        Assert.Equal("glob", parsed.IfPattern);
+        Assert.Null(parsed.IfInclude);
+        Assert.Equal("yes", parsed.IfExcludeAdminDown);
+        var preview = Assert.Single(CsvDevices.Preview(csv, Array.Empty<ExistingDeviceRef>()).Rows);
+        Assert.Equal(CsvRowStatus.Ready, preview.Status);
+
+        var exported = CsvDevices.Export(new[] { parsed });
+        var again = Assert.Single(CsvDevices.Parse(exported));
+        Assert.Equal("Gi1/0/*", again.IfExclude);
+        Assert.Equal("glob", again.IfPattern);
+        Assert.Equal("", again.IfInclude);
+    }
+
+    [Fact]
+    public void A_bad_interface_regex_is_a_row_error()
+    {
+        const string csv = "name,host,community,if_include,if_pattern\nCore,10.2.2.3,public,[,regex\n";
+        var row = Assert.Single(CsvDevices.Preview(csv, Array.Empty<ExistingDeviceRef>()).Rows);
+        Assert.Equal(CsvRowStatus.Error, row.Status);
+        Assert.Contains(row.Errors, error => error.Contains("regular expression"));
+    }
+
+    [Fact]
     public void V3_short_password_is_an_error()
     {
         const string csv = "name,host,version,v3_user,v3_auth_protocol,v3_auth_password\nR,10.0.0.8,v3,monitor,SHA256,short\n";

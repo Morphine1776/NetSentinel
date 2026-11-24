@@ -8,7 +8,8 @@ namespace NetSentinel.SimAgent;
 
 /// <summary>
 /// A small SNMP v1/v2c agent used for development, screenshots, and tests.
-/// It exposes system scalars, four interfaces with moving counters, and one gauge.
+/// It exposes system scalars, interface counters, and an optional gauge.
+/// The default core device has four interfaces. The access catalog adds a full Gi1/0/1–24 edge.
 /// </summary>
 public sealed class SimSnmpAgent : IDisposable
 {
@@ -373,7 +374,7 @@ public sealed class SimSnmpAgent : IDisposable
             port.Name == "lo" ? 24 : 6,
             port.SpeedBps,
             port.HighSpeedMbps,
-            1,
+            port.Admin,
             port.Oper,
             port.InBytesPerSecond,
             port.OutBytesPerSecond)).ToArray();

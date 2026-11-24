@@ -12,7 +12,9 @@ public sealed record ParsedTrap(
     string TrapOid,
     string Summary,
     string Varbinds,
-    bool IsInform);
+    bool IsInform,
+    int? IfIndex = null,
+    string? LinkEvent = null);
 
 public static class SnmpTrapParser
 {
@@ -54,7 +56,13 @@ public static class SnmpTrapParser
                 summary += $" specific {v1.Specific}";
             }
 
-            return new ParsedTrap("v1", security, oid, summary, varbinds, false);
+            var v1Event = v1.Generic switch
+            {
+                GenericCode.LinkDown => "down",
+                GenericCode.LinkUp => "up",
+                _ => null
+            };
+            return new ParsedTrap("v1", security, oid, summary, varbinds, false, FindIfIndex(message), v1Event);
         }
 
         var version = message.Version == VersionCode.V3 ? "v3" : "v2c";
@@ -63,7 +71,7 @@ public static class SnmpTrapParser
             : FindTrapOid(message) ?? "";
         var kind = type == SnmpType.InformRequestPdu ? "inform" : "trap";
         var text = $"SNMP{version} {kind} {trapOid}";
-        return new ParsedTrap(version, security, trapOid, text, varbinds, type == SnmpType.InformRequestPdu);
+        return new ParsedTrap(version, security, trapOid, text, varbinds, type == SnmpType.InformRequestPdu, FindIfIndex(message), LinkEvent(trapOid));
     }
 
     public static byte[]? InformResponse(ISnmpMessage message)
@@ -81,6 +89,60 @@ public static class SnmpTrapParser
             0,
             message.Variables());
         return response.ToBytes();
+    }
+
+    private static string? LinkEvent(string trapOid)
+    {
+        if (IsOid(trapOid, "1.3.6.1.6.3.1.1.5.3"))
+        {
+            return "down";
+        }
+
+        if (IsOid(trapOid, "1.3.6.1.6.3.1.1.5.4"))
+        {
+            return "up";
+        }
+
+        return null;
+    }
+
+    private static bool IsOid(string value, string oid)
+        => value == oid || value.StartsWith(oid + ".", StringComparison.Ordinal);
+
+    private static int? FindIfIndex(ISnmpMessage message)
+    {
+        try
+        {
+            foreach (var variable in message.Variables())
+            {
+                var id = variable.Id.ToString();
+                foreach (var prefix in new[] { "1.3.6.1.2.1.2.2.1.", "1.3.6.1.2.1.31.1.1.1." })
+                {
+                    if (!id.StartsWith(prefix, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var rest = id[prefix.Length..];
+                    var dot = rest.IndexOf('.');
+                    if (dot < 0 || dot == rest.Length - 1)
+                    {
+                        continue;
+                    }
+
+                    if (int.TryParse(rest[(dot + 1)..], out var index) && index > 0)
+                    {
+                        return index;
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+
+        return null;
     }
 
     private static string FindTrapOid(ISnmpMessage message)

@@ -6,6 +6,7 @@ public sealed class SimPort
     public string Name { get; init; } = "";
     public string Alias { get; init; } = "";
     public int Oper { get; init; } = 1;
+    public int Admin { get; init; } = 1;
     public ulong SpeedBps { get; init; } = 1_000_000_000;
     public int HighSpeedMbps { get; init; } = 1000;
     public double InBytesPerSecond { get; init; }
@@ -70,26 +71,57 @@ public static class SimCatalog
         Lldp = new[] { Neighbor(1, "sim-core-01", "Gi0/0", "10.1.0.1") }
     };
 
-    public static SimDevice Access { get; } = new()
-    {
-        SysName = "sim-access-01",
-        SysDescr = "NetSentinel Simulator, access switch",
-        Location = "IDF-2",
-        IncludeGauge = false,
-        Ports = new[]
-        {
-            Port(1, "Gi0/1", "to-core", 1, 1_000_000_000, 1000, 200_000, 500_000),
-            Port(2, "Gi0/2", "printer", 2, 100_000_000, 100, 0, 0)
-        },
-        Lldp = new[] { Neighbor(1, "sim-core-01", "Gi0/1", "10.1.0.1") }
-    };
+    public static SimDevice Access { get; } = BuildAccess();
 
-    private static SimPort Port(int index, string name, string alias, int oper, ulong speed, int highSpeed, double inbound, double outbound) => new()
+    private static SimDevice BuildAccess()
+    {
+        var ports = new List<SimPort>
+        {
+            Port(1, "Gi0/1", "uplink", 1, 1_000_000_000, 1000, 200_000, 500_000),
+            Port(2, "Gi0/2", "printer", 2, 100_000_000, 100, 0, 0)
+        };
+        for (var number = 1; number <= 24; number++)
+        {
+            var adminDown = number is 23 or 24;
+            var unplugged = number is 21 or 22;
+            var oper = adminDown || unplugged ? 2 : 1;
+            var alias = number switch
+            {
+                5 => "camera-lobby",
+                >= 10 and <= 12 => $"desk-{number}",
+                _ => ""
+            };
+            var live = oper == 1;
+            ports.Add(Port(
+                number + 2,
+                $"Gi1/0/{number}",
+                alias,
+                oper,
+                1_000_000_000,
+                1000,
+                live ? 8_000 + (number * 250) : 0,
+                live ? 3_000 : 0,
+                adminDown ? 2 : 1));
+        }
+
+        return new SimDevice
+        {
+            SysName = "sim-access-01",
+            SysDescr = "NetSentinel Simulator, access switch",
+            Location = "IDF-2",
+            IncludeGauge = false,
+            Ports = ports,
+            Lldp = new[] { Neighbor(1, "sim-core-01", "Gi0/1", "10.1.0.1") }
+        };
+    }
+
+    private static SimPort Port(int index, string name, string alias, int oper, ulong speed, int highSpeed, double inbound, double outbound, int admin = 1) => new()
     {
         Index = index,
         Name = name,
         Alias = alias,
         Oper = oper,
+        Admin = admin,
         SpeedBps = speed,
         HighSpeedMbps = highSpeed,
         InBytesPerSecond = inbound,

@@ -62,7 +62,7 @@
             @foreach (var minutes in new[] { 60, 360, 1440, 10080 })
             {
                 var label = minutes switch { 60 => "1h", 360 => "6h", 1440 => "24h", _ => "7d" };
-                <a class="chip @(Model.Range == minutes ? "on" : "")" href="?range=@minutes&iface=@Model.SelectedInterface&custom=@Model.SelectedCustom">@label</a>
+                <a class="chip @(Model.Range == minutes ? "on" : "")" href="?range=@minutes&iface=@Model.SelectedInterface&custom=@Model.SelectedCustom&unmonitored=@(Model.ShowUnmonitored ? 1 : 0)">@label</a>
             }
         </div>
     </div>
@@ -71,52 +71,133 @@
     </div>
 </section>
 
-<section class="panel">
+<section class="panel" id="interface-filters">
+    <div class="panel-head">
+        <h2>Interface filters</h2>
+        <p class="hint">New ports follow these rules. A manual checkbox on a row wins until you clear overrides.</p>
+    </div>
+    @if (!string.IsNullOrEmpty(Model.FilterError))
+    {
+        <p class="banner bad" role="alert">@Model.FilterError</p>
+    }
+    <form method="post" asp-page-handler="Filters" class="form-grid">
+        <input type="hidden" name="showUnmonitored" value="@(Model.ShowUnmonitored ? "true" : "false")" />
+        <input type="hidden" name="range" value="@Model.Range" />
+        <input type="hidden" name="iface" value="@Model.SelectedInterface" />
+        <input type="hidden" name="custom" value="@Model.SelectedCustom" />
+        <label class="span-2">
+            Include patterns
+            <textarea asp-for="Policy.IncludePattern" maxlength="500" placeholder="*uplink*"></textarea>
+            <span class="hint">Empty includes every port that is not excluded. Separate alternatives with a semicolon.</span>
+        </label>
+        <label class="span-2">
+            Exclude patterns
+            <textarea asp-for="Policy.ExcludePattern" maxlength="500" placeholder="Gi1/0/*"></textarea>
+            <span class="hint">Example glob <span class="mono">Gi1/0/*</span> or regex <span class="mono">^Gi1/0/\d+$</span>. Exclude wins when both match.</span>
+        </label>
+        <label>
+            Syntax
+            <select asp-for="Policy.Syntax">
+                <option value="glob">Glob</option>
+                <option value="regex">Regular expression</option>
+            </select>
+        </label>
+        <div>
+            <span>Match fields</span>
+            <div class="checks">
+                <label class="check"><input asp-for="Policy.MatchName" /> <span>ifName</span></label>
+                <label class="check"><input asp-for="Policy.MatchDescr" /> <span>ifDescr</span></label>
+                <label class="check"><input asp-for="Policy.MatchAlias" /> <span>ifAlias</span></label>
+            </div>
+        </div>
+        <label class="check">
+            <input asp-for="Policy.ExcludeAdminDown" />
+            <span>Auto-exclude administratively down ports</span>
+        </label>
+        <label class="check">
+            <input asp-for="Policy.RequireAlias" />
+            <span>Only monitor ports with an ifAlias (description)</span>
+        </label>
+        <div class="span-2 actions">
+            <button class="btn primary" type="submit">Save filters</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel" id="interface-table">
     <div class="panel-head">
         <h2>Interfaces</h2>
-        <p class="hint">Rates come from counter deltas. 64-bit HC counters are used when the device provides them.</p>
+        <p class="hint">@Model.MonitoredCount monitored@(Model.UnmonitoredCount > 0 ? $" · {Model.UnmonitoredCount} unmonitored hidden from history and alerts" : ""). Rates come from counter deltas.</p>
     </div>
-    @if (Model.Interfaces.Count == 0)
+    @if (!string.IsNullOrEmpty(Model.BulkError))
     {
-        <p class="empty-inline">No interface table yet. It appears after a successful poll.</p>
+        <p class="banner bad" role="alert">@Model.BulkError</p>
+    }
+    @if (Model.MonitoredCount + Model.UnmonitoredCount == 0)
+    {
+        <p class="empty-inline">No interface table yet. It appears after a successful poll. Filters above still apply to ports discovered later.</p>
+    }
+    else if (!Model.ShowUnmonitored && Model.Interfaces.Count == 0)
+    {
+        <p class="empty-inline">Every discovered port is unmonitored.</p>
+        <p class="iface-tools"><a class="chip" href="?range=@Model.Range&custom=@Model.SelectedCustom&unmonitored=1">Show unmonitored (@Model.UnmonitoredCount)</a></p>
     }
     else
     {
-        <div class="table-wrap flat">
-            <table class="responsive">
-                <thead>
-                    <tr>
-                        <th>Interface</th>
-                        <th>Admin</th>
-                        <th>Oper</th>
-                        <th>Speed</th>
-                        <th>In</th>
-                        <th>Out</th>
-                        <th>Util</th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach (var iface in Model.Interfaces)
-                {
-                    var selected = iface.IfIndex == Model.SelectedInterface;
-                    <tr class="@(selected ? "selected" : "")" data-select-iface="@iface.IfIndex">
-                        <td data-label="Interface">
-                            <div>@iface.IfDescr</div>
-                            <div class="sub mono">if @iface.IfIndex@(string.IsNullOrEmpty(iface.IfAlias) ? "" : " · " + iface.IfAlias)</div>
-                        </td>
-                        <td data-label="Admin">@TextFormat.Admin(iface.AdminStatus)</td>
-                        <td data-label="Oper"><span class="pill @TextFormat.Oper(iface.OperStatus)">@TextFormat.Oper(iface.OperStatus)</span></td>
-                        <td data-label="Speed" class="mono">@TextFormat.Speed(iface.SpeedBps)</td>
-                        <td data-label="In" class="mono">@TextFormat.Bps(iface.InBps)</td>
-                        <td data-label="Out" class="mono">@TextFormat.Bps(iface.OutBps)</td>
-                        <td data-label="Util" class="mono">@TextFormat.Percent(iface.InUtil) / @TextFormat.Percent(iface.OutUtil)</td>
-                    </tr>
-                }
-                </tbody>
-            </table>
-        </div>
+        <form method="post" asp-page-handler="Bulk" id="interface-bulk">
+            <input type="hidden" name="showUnmonitored" value="@(Model.ShowUnmonitored ? "true" : "false")" />
+            <input type="hidden" name="range" value="@Model.Range" />
+            <input type="hidden" name="iface" value="@Model.SelectedInterface" />
+            <input type="hidden" name="custom" value="@Model.SelectedCustom" />
+            <div class="iface-tools">
+                <a class="chip @(Model.ShowUnmonitored ? "on" : "")" href="?range=@Model.Range&iface=@Model.SelectedInterface&custom=@Model.SelectedCustom&unmonitored=@(Model.ShowUnmonitored ? 0 : 1)">@(Model.ShowUnmonitored ? "Hide unmonitored" : $"Show unmonitored ({Model.UnmonitoredCount})")</a>
+                <button class="btn tiny" type="submit" name="action" value="only-selected">Monitor only selected</button>
+                <button class="btn tiny" type="submit" name="action" value="unmonitor-down">Unmonitor all down / admin-down</button>
+                <button class="btn tiny ghost" type="submit" name="action" value="clear-overrides">Clear manual overrides</button>
+            </div>
+            <div class="table-wrap flat">
+                <table class="responsive">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="iface-all" aria-label="Select all interfaces" /></th>
+                            <th>Monitored</th>
+                            <th>Interface</th>
+                            <th>Admin</th>
+                            <th>Oper</th>
+                            <th>Speed</th>
+                            <th>In</th>
+                            <th>Out</th>
+                            <th>Util</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var iface in Model.Interfaces)
+                    {
+                        var selected = iface.IfIndex == Model.SelectedInterface;
+                        <tr class="@(selected ? "selected" : "")@(!iface.Monitored ? " unmonitored" : "")" data-select-iface="@iface.IfIndex">
+                            <td data-label="Select"><input class="iface-select" type="checkbox" name="selected" value="@iface.IfIndex" aria-label="Select @iface.IfDescr" /></td>
+                            <td data-label="Monitored">
+                                <input type="checkbox" data-monitor-toggle="@iface.IfIndex" @(iface.Monitored ? "checked" : "") aria-label="Monitor @iface.IfDescr" />
+                                <div class="sub">@(iface.MonitorOverride is null ? "rule" : "manual")</div>
+                            </td>
+                            <td data-label="Interface">
+                                <div>@iface.IfDescr</div>
+                                <div class="sub mono">if @iface.IfIndex@(string.IsNullOrEmpty(iface.IfName) || iface.IfName == iface.IfDescr ? "" : " · " + iface.IfName)@(string.IsNullOrEmpty(iface.IfAlias) ? "" : " · " + iface.IfAlias)</div>
+                            </td>
+                            <td data-label="Admin">@TextFormat.Admin(iface.AdminStatus)</td>
+                            <td data-label="Oper"><span class="pill @TextFormat.Oper(iface.OperStatus)">@TextFormat.Oper(iface.OperStatus)</span></td>
+                            <td data-label="Speed" class="mono">@TextFormat.Speed(iface.SpeedBps)</td>
+                            <td data-label="In" class="mono">@TextFormat.Bps(iface.InBps)</td>
+                            <td data-label="Out" class="mono">@TextFormat.Bps(iface.OutBps)</td>
+                            <td data-label="Util" class="mono">@TextFormat.Percent(iface.InUtil) / @TextFormat.Percent(iface.OutUtil)</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </form>
         <h3 class="chart-title">Bandwidth <span class="hint">Mbps, selected interface</span></h3>
-        <p id="bandwidth-note" class="hint" hidden>Bandwidth appears after the second successful poll, once a counter delta exists.</p>
+        <p id="bandwidth-note" class="hint" hidden>Bandwidth appears after the second successful poll, once a counter delta exists. Unmonitored ports are not stored.</p>
         <div class="chart-box">
             <canvas id="bandwidth-chart"></canvas>
         </div>

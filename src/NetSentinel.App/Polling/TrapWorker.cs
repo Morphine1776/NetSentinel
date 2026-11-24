@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.EntityFrameworkCore;
+using NetSentinel.Core;
 using NetSentinel.Data;
+using NetSentinel.Services;
 using NetSentinel.Snmp;
 using Lextm.SharpSnmpLib.Security;
 
@@ -229,7 +231,163 @@ public sealed class TrapWorker : BackgroundService
             });
         }
 
+        var transitions = await InterfaceTrapAlerts.ApplyAsync(db, result.RemoteEndPoint.Address, traps, _logger, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
+        if (transitions.Count > 0)
+        {
+            var email = scope.ServiceProvider.GetRequiredService<EmailNotifier>();
+            foreach (var group in transitions.GroupBy(item => item.DeviceName))
+            {
+                await email.NotifyAsync(group.Key, group.Select(item => item.Transition).ToList(), cancellationToken);
+            }
+        }
+
         _logger.LogInformation("Stored {Count} SNMP trap(s) from {Source}", traps.Count, result.RemoteEndPoint);
     }
+}
+
+internal static class InterfaceTrapAlerts
+{
+    public static async Task<List<(string DeviceName, AlertTransition Transition)>> ApplyAsync(
+        AppDbContext db,
+        System.Net.IPAddress source,
+        IReadOnlyList<ParsedTrap> traps,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        var interesting = traps.Where(trap => trap.LinkEvent is "down" or "up" && trap.IfIndex is int).ToList();
+        var transitions = new List<(string DeviceName, AlertTransition Transition)>();
+        if (interesting.Count == 0)
+        {
+            return transitions;
+        }
+
+        var devices = await db.Devices.AsNoTracking().ToListAsync(cancellationToken);
+        var matched = devices.Where(device => HostMatches(device.Host, source)).ToList();
+        if (matched.Count == 0)
+        {
+            return transitions;
+        }
+
+        var ids = matched.Select(device => device.Id).ToList();
+        var indexes = interesting.Select(trap => trap.IfIndex!.Value).ToHashSet();
+        var states = await db.InterfaceStates
+            .Where(state => ids.Contains(state.DeviceId) && indexes.Contains(state.IfIndex))
+            .ToListAsync(cancellationToken);
+        var names = devices.ToDictionary(device => device.Id, device => device.Name);
+        var now = DateTime.UtcNow;
+        foreach (var trap in interesting)
+        {
+            foreach (var state in states.Where(state => state.IfIndex == trap.IfIndex))
+            {
+                var effect = InterfaceTrapPolicy.Decide(trap.LinkEvent, state.Monitored);
+                var deviceName = names.GetValueOrDefault(state.DeviceId) ?? $"device {state.DeviceId}";
+                if (effect == InterfaceTrapEffect.Suppress)
+                {
+                    logger.LogInformation(
+                        "Ignored {Event} trap for unmonitored ifIndex {IfIndex} on {Device}",
+                        trap.LinkEvent,
+                        state.IfIndex,
+                        deviceName);
+                    continue;
+                }
+
+                if (effect == InterfaceTrapEffect.None)
+                {
+                    continue;
+                }
+
+                var scope = $"device:{state.DeviceId}";
+                var key = $"{scope}:if:{state.IfIndex}:down";
+                var label = InterfaceLabel(state);
+                if (effect == InterfaceTrapEffect.OpenDown)
+                {
+                    var open = await db.Alerts.AnyAsync(alert => alert.DedupKey == key && alert.State != AlertState.Resolved, cancellationToken);
+                    if (open)
+                    {
+                        continue;
+                    }
+
+                    var transition = new AlertTransition(
+                        AlertTransitionType.Open,
+                        key,
+                        AlertKind.InterfaceDown,
+                        AlertSeverity.Warning,
+                        $"Interface {label} on {deviceName} is down (linkDown trap).",
+                        state.IfIndex,
+                        null);
+                    db.Alerts.Add(Create(state.DeviceId, transition, now));
+                    transitions.Add((deviceName, transition));
+                    continue;
+                }
+
+                var alerts = await db.Alerts
+                    .Where(alert => alert.DedupKey == key && alert.State != AlertState.Resolved)
+                    .ToListAsync(cancellationToken);
+                if (alerts.Count == 0)
+                {
+                    continue;
+                }
+
+                foreach (var alert in alerts)
+                {
+                    alert.State = AlertState.Resolved;
+                    alert.ResolvedAt = now;
+                }
+
+                var resolve = new AlertTransition(
+                    AlertTransitionType.Resolve,
+                    key,
+                    AlertKind.InterfaceDown,
+                    AlertSeverity.Warning,
+                    $"Interface {label} on {deviceName} is up (linkUp trap).",
+                    state.IfIndex,
+                    null);
+                transitions.Add((deviceName, resolve));
+                var up = new AlertTransition(
+                    AlertTransitionType.Open,
+                    $"{scope}:if:{state.IfIndex}:up:trap:{now.Ticks}",
+                    AlertKind.InterfaceUp,
+                    AlertSeverity.Info,
+                    $"Interface {label} on {deviceName} is up (linkUp trap).",
+                    state.IfIndex,
+                    null);
+                db.Alerts.Add(Create(state.DeviceId, up, now));
+                transitions.Add((deviceName, up));
+            }
+        }
+
+        return transitions;
+    }
+
+    private static AlertEvent Create(int deviceId, AlertTransition transition, DateTime now) => new()
+    {
+        DeviceId = deviceId,
+        DedupKey = transition.DedupKey,
+        Kind = transition.Kind,
+        Severity = transition.Severity,
+        Message = transition.Message,
+        State = AlertState.Open,
+        IfIndex = transition.IfIndex,
+        RuleId = transition.RuleId,
+        CreatedAt = now
+    };
+
+    private static string InterfaceLabel(InterfaceState state)
+    {
+        if (!string.IsNullOrWhiteSpace(state.IfName))
+        {
+            return state.IfName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.IfDescr))
+        {
+            return state.IfDescr;
+        }
+
+        return $"if{state.IfIndex}";
+    }
+
+    private static bool HostMatches(string host, System.Net.IPAddress address)
+        => System.Net.IPAddress.TryParse(host, out var parsed) && parsed.Equals(address);
 }

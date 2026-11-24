@@ -58,6 +58,7 @@ builder.Services.AddScoped<RuleService>();
 builder.Services.AddScoped<EmailNotifier>();
 builder.Services.AddScoped<ImportService>();
 builder.Services.AddScoped<MapService>();
+builder.Services.AddScoped<InterfaceMonitorService>();
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

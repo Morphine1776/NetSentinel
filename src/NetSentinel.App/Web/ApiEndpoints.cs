@@ -19,7 +19,7 @@ public static class ApiEndpoints
             return Results.Json(devices.Select(Summary));
         });
 
-        api.MapGet("/devices/{id:int}", async (int id, AppDbContext db) =>
+        api.MapGet("/devices/{id:int}", async (int id, bool? monitoredOnly, AppDbContext db) =>
         {
             var device = await db.Devices.AsNoTracking().Include(item => item.CustomOids).FirstOrDefaultAsync(item => item.Id == id);
             if (device is null)
@@ -31,9 +31,17 @@ public static class ApiEndpoints
                 .Where(item => item.DeviceId == id && item.Present)
                 .OrderBy(item => item.IfIndex)
                 .ToListAsync();
+            var unmonitored = interfaces.Count(item => !item.Monitored);
+            if (monitoredOnly == true)
+            {
+                interfaces = interfaces.Where(item => item.Monitored).ToList();
+            }
+
             return Results.Json(new
             {
                 device = Summary(device),
+                interfacePolicy = InterfaceMonitorService.PolicyJson(device),
+                unmonitored,
                 interfaces = interfaces.Select(InterfaceJson),
                 customOids = device.CustomOids.Select(oid => new
                 {
@@ -47,6 +55,50 @@ public static class ApiEndpoints
                     oid.LastAt
                 })
             });
+        });
+
+        api.MapGet("/devices/{id:int}/interface-policy", async (int id, AppDbContext db) =>
+        {
+            var device = await db.Devices.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id);
+            return device is null ? Results.NotFound() : Results.Json(InterfaceMonitorService.PolicyJson(device));
+        });
+
+        api.MapPut("/devices/{id:int}/interface-policy", async (int id, InterfacePolicyInput input, InterfaceMonitorService monitor) =>
+        {
+            var error = await monitor.SavePolicyAsync(id, input);
+            if (error is null)
+            {
+                return Results.Json(input);
+            }
+
+            return error == "That device no longer exists."
+                ? Results.NotFound()
+                : Results.BadRequest(new { errors = new[] { error } });
+        });
+
+        api.MapPut("/devices/{id:int}/interfaces/{ifIndex:int}/monitored", async (int id, int ifIndex, InterfaceMonitorUpdate update, InterfaceMonitorService monitor, AppDbContext db) =>
+        {
+            var (ok, error) = await monitor.SetAsync(id, ifIndex, update);
+            if (!ok)
+            {
+                return Results.NotFound();
+            }
+
+            var state = await db.InterfaceStates.AsNoTracking().FirstAsync(item => item.DeviceId == id && item.IfIndex == ifIndex);
+            return Results.Json(InterfaceJson(state));
+        });
+
+        api.MapPost("/devices/{id:int}/interfaces/monitoring", async (int id, InterfaceBulkRequest body, InterfaceMonitorService monitor) =>
+        {
+            var error = await monitor.BulkAsync(id, body.Action, body.IfIndexes);
+            if (error is null)
+            {
+                return Results.NoContent();
+            }
+
+            return error == "That device no longer exists."
+                ? Results.NotFound()
+                : Results.BadRequest(new { errors = new[] { error } });
         });
 
         api.MapPost("/devices", async (DeviceInput input, DeviceAdminService devices) =>
@@ -82,8 +134,8 @@ public static class ApiEndpoints
             return result.Error is null ? Results.Json(result) : Results.BadRequest(new { errors = new[] { result.Error } });
         });
 
-        api.MapGet("/map", async (MapService map, CancellationToken cancellationToken) =>
-            Results.Json(await map.BuildAsync(cancellationToken)));
+        api.MapGet("/map", async (bool? showUnmonitored, MapService map, CancellationToken cancellationToken) =>
+            Results.Json(await map.BuildAsync(showUnmonitored == true, cancellationToken)));
 
         api.MapPost("/map/positions", async (MapPositionBatch batch, MapService map, CancellationToken cancellationToken) =>
         {
@@ -278,6 +330,9 @@ public static class ApiEndpoints
         outText = TextFormat.Bps(state.OutBps),
         inUtil = state.InUtil,
         outUtil = state.OutUtil,
+        state.Monitored,
+        monitorOverride = state.MonitorOverride,
+        followsRules = state.MonitorOverride is null,
         state.UpdatedAt
     };
 

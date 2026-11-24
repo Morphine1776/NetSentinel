@@ -43,12 +43,13 @@ Reachability is two signals. SNMP success means the device is up. Ping is report
 Built-in alerts:
 
 - Device down after N consecutive SNMP failures (default 2), and device up when it recovers.
-- Interface down when `ifOperStatus` is down or lower-layer-down and the interface is not administratively down.
+- Interface down when `ifOperStatus` is down or lower-layer-down and the interface is not administratively down. Unmonitored interfaces are skipped, and an open interface alert closes when the port is unmonitored.
 - Reboot when `sysUpTime` decreases between successful polls.
+- linkDown and linkUp traps open or clear the same interface-down alert when the port is monitored. The trap is still stored either way. An unmonitored port does not raise an alert.
 
 Threshold rules cover response time, interface bitrates, utilization, and custom OID values or rates. Optional SMTP mail fires when an alert opens or clears.
 
-SQLite stores devices, current interface state, time series, traps, alerts, rules, and settings. A retention job deletes samples, traps, and resolved alerts older than the configured number of days. Open alerts are kept.
+SQLite stores devices, current interface state, time series, traps, alerts, rules, and settings. Each interface has a `Monitored` flag (default on) and an optional manual override. Existing databases gain those columns, plus the per-device filter columns, the first time the app starts. A retention job deletes samples, traps, and resolved alerts older than the configured number of days. Open alerts are kept.
 
 The dashboard is cookie-authenticated. Credentials live in `appsettings.json`, not in the database. Mutating API calls also require the `X-NetSentinel: 1` header.
 
@@ -83,7 +84,7 @@ The settings page is the place to change retention, the failure threshold, the t
 dotnet test NetSentinel.sln
 ```
 
-Unit tests cover 32-bit and 64-bit counter deltas, wraps, reboot resets, utilization, and alert rules. The integration test starts the simulator on an ephemeral port, polls it twice, and checks that `Gi0/0` reports about 100 Mbps inbound. A second test sends a trap and parses it.
+Unit tests cover 32-bit and 64-bit counter deltas, wraps, reboot resets, utilization, alert rules, interface filter evaluation (including manual override precedence), and the SQLite column upgrade. The integration test starts the simulator on an ephemeral port, polls it twice, and checks that `Gi0/0` reports about 100 Mbps inbound. A second test sends a trap and parses it.
 
 ## Run in the console
 
@@ -116,6 +117,8 @@ dotnet run --project src/NetSentinel.SimAgent
 | Gi0/0 | about 100 Mbps in, 24 Mbps out, 1 Gbps link |
 | Gi0/1 | lighter traffic |
 | Gi0/2 | admin up, oper down |
+
+`sim-access-01` is the collapsed-edge example: Gi0/1 (`uplink`), Gi0/2 (`printer`, oper down), and Gi1/0/1 through Gi1/0/24. Most access ports have no ifAlias. Gi1/0/5 is `camera-lobby`, Gi1/0/10–12 have desk aliases, Gi1/0/21–22 are oper down, and Gi1/0/23–24 are administratively down. A filter of exclude `Gi1/0/*`, include `*uplink*`, or "only ports with an ifAlias" shows the difference on the device page.
 | Custom OID | `1.3.6.1.4.1.99999.1.0` gauge, a temperature around 42 |
 | Trap | one coldStart to `127.0.0.1:1162` shortly after start |
 
@@ -135,15 +138,26 @@ Core's Gi0/0 advertises dist, and Gi0/1 advertises access. Both sides advertise 
 
 ## Using the dashboard
 
-- **Devices.** Status, sysName, uptime, response time, and ping. Open a device for the interface table and charts. Ranges are 1 hour, 6 hours, 24 hours, and 7 days.
+- **Devices.** Status, sysName, uptime, response time, and ping. Open a device for the interface table and charts. Ranges are 1 hour, 6 hours, 24 hours, and 7 days. Each row has a monitored checkbox. Select rows for "Monitor only selected", or unmonitor every down and admin-down port. "Clear manual overrides" lets the filters decide again. Unmonitored ports stay in the table only while "Show unmonitored" is on. They are still discovered, but polls do not keep bandwidth history for them and they do not raise interface or threshold alerts.
 - **Edit.** Host, port, per-device poll interval, v1/v2c community, or v3 user with MD5/SHA-1/SHA-256/SHA-384/SHA-512 and DES/AES/AES-192/AES-256. Leave a stored v3 password blank to keep it. Custom OIDs are edited on the same form.
 - **Alerts.** Open and acknowledged items, plus history. Ack and resolve are manual; a cleared condition resolves the matching alert on the next poll.
 - **Traps.** Newest first, with varbinds. v1 and v2c are stored as they arrive. v3 traps are decrypted when the username matches a configured device. Informs get a response so the sender does not retry.
 - **Settings.** Retention, failure threshold, trap listener, SMTP, and threshold rules.
-- **Import.** Upload a CSV (template and export use the same columns). The preview lists ready rows, duplicates of devices you already have, and per-row errors. Choose skip or update for duplicates, then commit. Headers are case-insensitive and can appear in any order. Quoted commas are supported. The limit is 1,000 devices.
-- **Map.** Devices are nodes colored by live status. Edges come from LLDP (`lldpRemTable`) and CDP (`cdpCacheTable`) when the neighbor's sysName, chassis id, or management address matches one known device, plus the parent/uplink field and any manual link you add. A matched local interface shows link utilization. Drag a node to save its position. Group by the CSV group or location fields. Click a node to open the device. The map refreshes every 15 seconds.
+- **Interface filters.** On the device page, include and exclude patterns match ifName, ifDescr, and ifAlias (you can turn fields off). Syntax is a whole-string glob (`Gi1/0/*`, `*uplink*`, `?` for one character) or a regular expression. Separate alternatives with `;`. When a port matches both, exclude wins. Optional switches skip administratively down ports and ports with an empty ifAlias. A manual checkbox overrides the rules for that port. Filters are reapplied on each poll and when you save them, so newly discovered ports follow the policy.
+- **Import.** Upload a CSV (template and export use the same columns). The preview lists ready rows, duplicates of devices you already have, and per-row errors. Choose skip or update for duplicates, then commit. Headers are case-insensitive and can appear in any order. Quoted commas are supported. The limit is 1,000 devices. Optional columns: `if_include`, `if_exclude`, `if_pattern` (`glob` or `regex`), `if_match` (`name`, `descr`, `alias`), `if_exclude_admin_down`, and `if_require_alias`. A missing column leaves the stored filter alone on update. An empty column clears it.
+- **Map.** Devices are nodes colored by live status. Edges come from LLDP (`lldpRemTable`) and CDP (`cdpCacheTable`) when the neighbor's sysName, chassis id, or management address matches one known device, plus the parent/uplink field and any manual link you add. A matched local interface shows link utilization when that port is monitored. "Show unmonitored" puts the percentage back. Drag a node to save its position. Group by the CSV group or location fields. Click a node to open the device. The map refreshes every 15 seconds.
 
 REST endpoints under `/api` accept the same cookie and, for POST, PUT, and DELETE, the header `X-NetSentinel: 1`. `GET /health` is anonymous.
+
+Interface monitoring:
+
+| Method | Path | Body |
+| --- | --- | --- |
+| GET, PUT | `/api/devices/{id}/interface-policy` | include/exclude patterns, `syntax` (`glob` or `regex`), `matchName`, `matchDescr`, `matchAlias`, `excludeAdminDown`, `requireAlias` |
+| PUT | `/api/devices/{id}/interfaces/{ifIndex}/monitored` | `{ "monitored": false }` sets a manual override. `{ "clearOverride": true }` follows the rules again. |
+| POST | `/api/devices/{id}/interfaces/monitoring` | `{ "action": "only-selected" \| "unmonitor-down" \| "clear-overrides", "ifIndexes": [1, 2] }` |
+
+`GET /api/devices/{id}` includes every discovered interface, the policy, and `monitored` / `monitorOverride` on each row. `?monitoredOnly=true` drops the unmonitored rows. `GET /api/map?showUnmonitored=true` includes utilization for links whose local port is not monitored.
 
 ## Windows Service
 

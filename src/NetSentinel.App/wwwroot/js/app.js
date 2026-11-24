@@ -122,10 +122,36 @@
   }
 
   document.querySelectorAll("[data-select-iface]").forEach(function (row) {
-    row.addEventListener("click", function () {
+    row.addEventListener("click", function (event) {
+      if (event.target.closest("input, button, a, label, select, textarea")) return;
       const url = new URL(window.location.href);
       url.searchParams.set("iface", row.dataset.selectIface);
       window.location.href = url.toString();
+    });
+  });
+
+  const selectAll = document.getElementById("iface-all");
+  if (selectAll) {
+    selectAll.addEventListener("change", function () {
+      document.querySelectorAll(".iface-select").forEach(function (box) { box.checked = selectAll.checked; });
+    });
+  }
+
+  document.querySelectorAll("[data-monitor-toggle]").forEach(function (box) {
+    box.addEventListener("change", function () {
+      const deviceId = document.body.dataset.device;
+      const checked = box.checked;
+      fetch("/api/devices/" + deviceId + "/interfaces/" + box.dataset.monitorToggle + "/monitored", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "X-NetSentinel": "1" },
+        body: JSON.stringify({ monitored: checked })
+      }).then(function (response) {
+        if (!response.ok) {
+          box.checked = !checked;
+          return;
+        }
+        window.location.reload();
+      }).catch(function () { box.checked = !checked; });
     });
   });
   document.querySelectorAll("[data-select-custom]").forEach(function (row) {

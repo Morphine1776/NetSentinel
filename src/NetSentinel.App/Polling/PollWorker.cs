@@ -126,6 +126,7 @@ public sealed class PollWorker : BackgroundService
 
             var uptimeReset = CounterMath.IsUptimeReset(device.LastSysUpTimeTicks, result.SysUpTimeTicks);
             var currentInterfaces = new List<InterfaceSnapshot>();
+            var monitorRules = InterfaceMonitorService.RulesFor(device);
             if (result.SnmpOk)
             {
                 var seen = new HashSet<int>();
@@ -168,18 +169,26 @@ public sealed class PollWorker : BackgroundService
                     state.OutUtil = outUtil;
                     state.Present = true;
                     state.UpdatedAt = result.SampledAt;
+                    var monitored = InterfaceMonitor.Evaluate(
+                        new InterfaceIdentity(reading.IfName, reading.IfDescr, reading.IfAlias, reading.AdminStatus),
+                        monitorRules,
+                        state.MonitorOverride);
+                    state.Monitored = monitored;
 
-                    db.InterfaceSamples.Add(new InterfaceSample
+                    if (monitored)
                     {
-                        DeviceId = id,
-                        IfIndex = reading.IfIndex,
-                        Timestamp = result.SampledAt,
-                        OperStatus = reading.OperStatus,
-                        InBps = inBps,
-                        OutBps = outBps,
-                        InUtil = inUtil,
-                        OutUtil = outUtil
-                    });
+                        db.InterfaceSamples.Add(new InterfaceSample
+                        {
+                            DeviceId = id,
+                            IfIndex = reading.IfIndex,
+                            Timestamp = result.SampledAt,
+                            OperStatus = reading.OperStatus,
+                            InBps = inBps,
+                            OutBps = outBps,
+                            InUtil = inUtil,
+                            OutUtil = outUtil
+                        });
+                    }
 
                     currentInterfaces.Add(new InterfaceSnapshot(
                         reading.IfIndex,
@@ -190,7 +199,8 @@ public sealed class PollWorker : BackgroundService
                         inBps,
                         outBps,
                         inUtil,
-                        outUtil));
+                        outUtil,
+                        monitored));
                 }
 
                 foreach (var state in states.Where(item => !seen.Contains(item.IfIndex)))
@@ -392,7 +402,8 @@ public sealed class PollWorker : BackgroundService
         state.InBps,
         state.OutBps,
         state.InUtil,
-        state.OutUtil);
+        state.OutUtil,
+        state.Monitored);
 
     private static async Task SaveAsync(AppDbContext db, CancellationToken cancellationToken)
     {

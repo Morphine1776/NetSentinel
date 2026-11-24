@@ -236,14 +236,25 @@ tbody tr[data-select-iface], tbody tr[data-select-custom] { cursor: pointer; }
 .banner.bad { background: rgba(255, 109, 87, 0.1); color: #ffd0c8; }
 
 label { display: flex; flex-direction: column; gap: 0.35rem; color: var(--muted); font-size: 0.85rem; }
-input, select {
+input, select, textarea {
   background: #10160f;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 0.65rem 0.75rem;
   outline: none;
+  color: var(--text);
 }
-input:focus, select:focus { border-color: rgba(214, 255, 74, 0.7); }
+textarea { min-height: 4.2rem; resize: vertical; font-family: var(--mono); }
+input:focus, select:focus, textarea:focus { border-color: rgba(214, 255, 74, 0.7); }
+table input[type="checkbox"], .check input {
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  accent-color: #d6ff4a;
+}
+.checks { display: flex; gap: 0.9rem; flex-wrap: wrap; margin-top: 0.35rem; }
+.iface-tools { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.2rem 0 0.8rem; }
+tr.unmonitored td { color: var(--muted); }
 .form-grid, .stack { display: grid; gap: 0.85rem; }
 .form-grid { grid-template-columns: 1fr 1fr; }
 .span-2 { grid-column: 1 / -1; }

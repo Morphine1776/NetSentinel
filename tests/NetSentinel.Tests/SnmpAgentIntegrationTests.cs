@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using Lextm.SharpSnmpLib;
+using Lextm.SharpSnmpLib.Messaging;
 using Lextm.SharpSnmpLib.Security;
 using Microsoft.Extensions.Logging.Abstractions;
 using NetSentinel.Core;
@@ -63,6 +65,38 @@ public class SnmpAgentIntegrationTests
         Assert.Equal("1.3.6.1.6.3.1.1.5.1", trap.TrapOid);
         Assert.Contains("1.3.6.1.4.1.99999.1.0", trap.Varbinds);
         Assert.Equal("v2c", trap.Version);
+        Assert.Null(trap.LinkEvent);
+    }
+
+    [Fact]
+    public void Link_down_trap_carries_the_interface_index()
+    {
+        var variables = new List<Variable>
+        {
+            new(new ObjectIdentifier("1.3.6.1.2.1.2.2.1.1.14"), new Integer32(14)),
+            new(new ObjectIdentifier("1.3.6.1.2.1.2.2.1.2.14"), new OctetString("Gi1/0/12")),
+            new(new ObjectIdentifier("1.3.6.1.2.1.2.2.1.8.14"), new Integer32(2))
+        };
+        var message = new TrapV2Message(
+            7,
+            VersionCode.V2,
+            new OctetString("public"),
+            new ObjectIdentifier("1.3.6.1.6.3.1.1.5.3"),
+            100,
+            variables);
+        var trap = Assert.Single(SnmpTrapParser.Parse(message.ToBytes(), new UserRegistry()));
+        Assert.Equal("down", trap.LinkEvent);
+        Assert.Equal(14, trap.IfIndex);
+    }
+
+    [Fact]
+    public void Access_simulator_exposes_a_full_edge_of_ports()
+    {
+        Assert.Equal(26, SimCatalog.Access.Ports.Count);
+        Assert.Contains(SimCatalog.Access.Ports, port => port.Name == "Gi0/1" && port.Alias == "uplink");
+        Assert.Equal(24, SimCatalog.Access.Ports.Count(port => port.Name.StartsWith("Gi1/0/", StringComparison.Ordinal)));
+        Assert.Contains(SimCatalog.Access.Ports, port => port.Admin == 2 && port.Oper == 2);
+        Assert.Contains(SimCatalog.Access.Ports, port => port.Name == "Gi1/0/21" && port.Oper == 2 && port.Admin == 1);
     }
 
     private static DevicePollTarget Target(int port, string community) => new(

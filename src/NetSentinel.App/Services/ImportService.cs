@@ -18,10 +18,12 @@ public sealed class ImportCommitResult
 public sealed class ImportService
 {
     private readonly AppDbContext _db;
+    private readonly InterfaceMonitorService _interfaces;
 
-    public ImportService(AppDbContext db)
+    public ImportService(AppDbContext db, InterfaceMonitorService interfaces)
     {
         _db = db;
+        _interfaces = interfaces;
     }
 
     public async Task<CsvPreview> PreviewAsync(string? csv, CancellationToken cancellationToken = default)
@@ -50,7 +52,13 @@ public sealed class ImportService
             device.GroupName,
             device.Location,
             device.Tags,
-            device.ParentDeviceId is int parentId && names.TryGetValue(parentId, out var parent) ? parent : ""));
+            device.ParentDeviceId is int parentId && names.TryGetValue(parentId, out var parent) ? parent : "",
+            device.IfIncludePattern,
+            device.IfExcludePattern,
+            device.IfPatternSyntax,
+            Flag(device.IfExcludeAdminDown),
+            Flag(device.IfRequireAlias),
+            device.IfMatchFields));
         return CsvDevices.Export(rows);
     }
 
@@ -118,9 +126,16 @@ public sealed class ImportService
         }
 
         await _db.SaveChangesAsync(cancellationToken);
+        foreach (var (_, device) in touched)
+        {
+            await _interfaces.ReapplyAsync(device.Id, cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
         return result;
     }
+
+    private static string Flag(bool value) => value ? "yes" : "no";
 
     private static void Apply(Device device, CsvDeviceRow row, bool keepSecrets)
     {
@@ -135,6 +150,7 @@ public sealed class ImportService
         device.GroupName = row.Group.Trim();
         device.Location = row.Location.Trim();
         device.Tags = CsvDevices.NormalizeTags(row.Tags);
+        ApplyInterfacePolicy(device, row);
         device.Enabled = true;
         device.UpdatedAt = DateTime.UtcNow;
         device.NextPollAt = DateTime.UtcNow;
@@ -158,6 +174,39 @@ public sealed class ImportService
         if (!string.IsNullOrEmpty(row.V3PrivPassword) || !keepSecrets)
         {
             device.V3PrivPassword = row.V3PrivPassword;
+        }
+    }
+
+    private static void ApplyInterfacePolicy(Device device, CsvDeviceRow row)
+    {
+        if (row.IfInclude is not null)
+        {
+            device.IfIncludePattern = row.IfInclude.Trim();
+        }
+
+        if (row.IfExclude is not null)
+        {
+            device.IfExcludePattern = row.IfExclude.Trim();
+        }
+
+        if (row.IfPattern is not null)
+        {
+            device.IfPatternSyntax = string.IsNullOrWhiteSpace(row.IfPattern) ? "glob" : row.IfPattern.Trim().ToLowerInvariant();
+        }
+
+        if (row.IfMatch is not null && InterfaceMonitor.TryParseFields(row.IfMatch, out var name, out var descr, out var alias))
+        {
+            device.IfMatchFields = InterfaceMonitor.FormatFields(name, descr, alias);
+        }
+
+        if (row.IfExcludeAdminDown is not null && CsvDevices.TryParseFlag(row.IfExcludeAdminDown, out var excludeAdminDown))
+        {
+            device.IfExcludeAdminDown = excludeAdminDown;
+        }
+
+        if (row.IfRequireAlias is not null && CsvDevices.TryParseFlag(row.IfRequireAlias, out var requireAlias))
+        {
+            device.IfRequireAlias = requireAlias;
         }
     }
 
@@ -185,10 +234,14 @@ public sealed class MapService
         _db = db;
     }
 
-    public async Task<object> BuildAsync(CancellationToken cancellationToken = default)
+    public async Task<object> BuildAsync(bool showUnmonitored = false, CancellationToken cancellationToken = default)
     {
         var devices = await _db.Devices.AsNoTracking().OrderBy(device => device.Name).ToListAsync(cancellationToken);
         var links = await _db.Links.AsNoTracking().ToListAsync(cancellationToken);
+        var monitored = await _db.InterfaceStates.AsNoTracking()
+            .Select(state => new { state.DeviceId, state.IfIndex, state.Monitored })
+            .ToListAsync(cancellationToken);
+        var monitoredByPort = monitored.ToDictionary(state => (state.DeviceId, state.IfIndex), state => state.Monitored);
         var nodes = devices.Select(device => new
         {
             id = device.Id,
@@ -239,7 +292,16 @@ public sealed class MapService
 
         foreach (var link in links)
         {
-            Add(link.SourceDeviceId, link.TargetDeviceId, link.Kind, link.LocalPort, link.RemotePort, link.Utilization, link.Id, link.Kind == "manual");
+            var utilization = link.Utilization;
+            if (!showUnmonitored
+                && link.LocalIfIndex is int ifIndex
+                && monitoredByPort.TryGetValue((link.SourceDeviceId, ifIndex), out var isMonitored)
+                && !isMonitored)
+            {
+                utilization = null;
+            }
+
+            Add(link.SourceDeviceId, link.TargetDeviceId, link.Kind, link.LocalPort, link.RemotePort, utilization, link.Id, link.Kind == "manual");
         }
 
         foreach (var device in devices)

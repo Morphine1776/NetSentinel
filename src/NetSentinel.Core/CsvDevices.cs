@@ -28,7 +28,13 @@ public sealed record CsvDeviceRow(
     string Group,
     string Location,
     string Tags,
-    string Parent);
+    string Parent,
+    string? IfInclude = null,
+    string? IfExclude = null,
+    string? IfPattern = null,
+    string? IfExcludeAdminDown = null,
+    string? IfRequireAlias = null,
+    string? IfMatch = null);
 
 public sealed record CsvPreviewRow(
     int Line,
@@ -60,15 +66,16 @@ public static class CsvDevices
     public const int MaxCharacters = 512 * 1024;
 
     public const string Template =
-        "name,host,version,community,v3_user,v3_auth_protocol,v3_auth_password,v3_priv_protocol,v3_priv_password,poll_interval,port,group,location,tags,parent\r\n" +
-        "Core switch,10.0.0.1,v2c,public,,,,,60,161,campus,MDF,\"core,edge\",\r\n" +
-        "Access switch,10.0.0.2,v2c,public,,,,,120,161,campus,IDF,access,Core switch\r\n" +
-        "Border router,10.0.0.3,v3,,monitor,SHA256,auth-pass,AES,priv-pass,60,161,edge,MPOE,wan,\r\n";
+        "name,host,version,community,v3_user,v3_auth_protocol,v3_auth_password,v3_priv_protocol,v3_priv_password,poll_interval,port,group,location,tags,parent,if_include,if_exclude,if_pattern,if_match,if_exclude_admin_down,if_require_alias\r\n" +
+        "Core switch,10.0.0.1,v2c,public,,,,,60,161,campus,MDF,\"core,edge\",,*uplink*,Gi1/0/*,glob,\"name,descr,alias\",yes,no\r\n" +
+        "Access switch,10.0.0.2,v2c,public,,,,,120,161,campus,IDF,access,Core switch,,,,glob,\"name,descr,alias\",yes,yes\r\n" +
+        "Border router,10.0.0.3,v3,,monitor,SHA256,auth-pass,AES,priv-pass,60,161,edge,MPOE,wan,,,,,,\r\n";
 
     private static readonly string[] HeaderOrder =
     {
         "name", "host", "version", "community", "v3_user", "v3_auth_protocol", "v3_auth_password",
-        "v3_priv_protocol", "v3_priv_password", "poll_interval", "port", "group", "location", "tags", "parent"
+        "v3_priv_protocol", "v3_priv_password", "poll_interval", "port", "group", "location", "tags", "parent",
+        "if_include", "if_exclude", "if_pattern", "if_match", "if_exclude_admin_down", "if_require_alias"
     };
 
     private static readonly Dictionary<string, string> HeaderAliases = BuildAliases();
@@ -118,7 +125,9 @@ public static class CsvDevices
             var cells = new[]
             {
                 row.Name, row.Host, row.Version, row.Community, row.V3User, row.V3AuthProtocol, row.V3AuthPassword,
-                row.V3PrivProtocol, row.V3PrivPassword, row.PollInterval, row.Port, row.Group, row.Location, row.Tags, row.Parent
+                row.V3PrivProtocol, row.V3PrivPassword, row.PollInterval, row.Port, row.Group, row.Location, row.Tags, row.Parent,
+                row.IfInclude ?? "", row.IfExclude ?? "", row.IfPattern ?? "", row.IfMatch ?? "",
+                row.IfExcludeAdminDown ?? "", row.IfRequireAlias ?? ""
             };
             builder.Append(string.Join(',', cells.Select(Escape)));
             builder.Append("\r\n");
@@ -171,6 +180,8 @@ public static class CsvDevices
                 ? record.Cells[index].Trim()
                 : "";
 
+            string? Optional(string key) => columns.ContainsKey(key) ? Cell(key) : null;
+
             rows.Add(new CsvDeviceRow(
                 record.Line,
                 Cell("name"),
@@ -187,7 +198,13 @@ public static class CsvDevices
                 Cell("group"),
                 Cell("location"),
                 Cell("tags"),
-                Cell("parent")));
+                Cell("parent"),
+                Optional("if_include"),
+                Optional("if_exclude"),
+                Optional("if_pattern"),
+                Optional("if_exclude_admin_down"),
+                Optional("if_require_alias"),
+                Optional("if_match")));
         }
 
         return rows;
@@ -257,6 +274,7 @@ public static class CsvDevices
             if (row.Group.Length > 80) errors.Add("Group must be 80 characters or fewer.");
             if (row.Location.Length > 80) errors.Add("Location must be 80 characters or fewer.");
             if (row.Tags.Length > 200) errors.Add("Tags must be 200 characters or fewer.");
+            ValidateInterfacePolicy(row, errors);
 
             int? existingId = null;
             string? match = null;
@@ -412,11 +430,93 @@ public static class CsvDevices
         }
     }
 
+    public static bool TryParseFlag(string? text, out bool value)
+    {
+        var token = (text ?? "").Trim();
+        if (token.Length == 0
+            || token.Equals("false", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("no", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("n", StringComparison.OrdinalIgnoreCase)
+            || token == "0")
+        {
+            value = false;
+            return true;
+        }
+
+        if (token.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("yes", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("y", StringComparison.OrdinalIgnoreCase)
+            || token == "1")
+        {
+            value = true;
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
+
     public static string NormalizeTags(string tags)
     {
         var parts = tags.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase);
         return string.Join(", ", parts);
+    }
+
+    private static void ValidateInterfacePolicy(CsvDeviceRow row, List<string> errors)
+    {
+        if (row.IfInclude is not null && row.IfInclude.Length > InterfaceMonitor.MaxPatternLength)
+        {
+            errors.Add($"if_include must be {InterfaceMonitor.MaxPatternLength} characters or fewer.");
+        }
+
+        if (row.IfExclude is not null && row.IfExclude.Length > InterfaceMonitor.MaxPatternLength)
+        {
+            errors.Add($"if_exclude must be {InterfaceMonitor.MaxPatternLength} characters or fewer.");
+        }
+
+        var syntax = InterfacePatternSyntax.Glob;
+        if (row.IfPattern is not null && !InterfaceMonitor.TrySyntax(row.IfPattern, out syntax))
+        {
+            errors.Add("if_pattern must be glob or regex.");
+        }
+
+        var matchName = true;
+        var matchDescr = true;
+        var matchAlias = true;
+        if (row.IfMatch is not null && !InterfaceMonitor.TryParseFields(row.IfMatch, out matchName, out matchDescr, out matchAlias))
+        {
+            errors.Add("if_match must list name, descr, alias, or a combination of those.");
+        }
+
+        if (row.IfExcludeAdminDown is not null && !TryParseFlag(row.IfExcludeAdminDown, out _))
+        {
+            errors.Add("if_exclude_admin_down must be yes or no.");
+        }
+
+        if (row.IfRequireAlias is not null && !TryParseFlag(row.IfRequireAlias, out _))
+        {
+            errors.Add("if_require_alias must be yes or no.");
+        }
+
+        if (row.IfInclude is null && row.IfExclude is null)
+        {
+            return;
+        }
+
+        var patternError = InterfaceMonitor.Validate(new InterfaceMonitorRules(
+            row.IfInclude ?? "",
+            row.IfExclude ?? "",
+            syntax,
+            matchName,
+            matchDescr,
+            matchAlias,
+            false,
+            false));
+        if (patternError is not null)
+        {
+            errors.Add(patternError);
+        }
     }
 
     private static void ValidateSecrets(CsvDeviceRow row, SnmpVersion version, List<string> errors)
@@ -535,6 +635,12 @@ public static class CsvDevices
         Add("location", "site");
         Add("tags", "tag", "labels");
         Add("parent", "uplink", "parent_device", "uplink_device");
+        Add("if_include", "interface_include", "include_interfaces", "if_include_pattern");
+        Add("if_exclude", "interface_exclude", "exclude_interfaces", "if_exclude_pattern");
+        Add("if_pattern", "if_pattern_syntax", "interface_pattern", "pattern_syntax");
+        Add("if_match", "if_match_fields", "interface_fields");
+        Add("if_exclude_admin_down", "exclude_admin_down", "skip_admin_down");
+        Add("if_require_alias", "require_alias", "require_description", "only_described");
         return map;
     }
 

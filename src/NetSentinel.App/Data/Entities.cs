@@ -37,6 +37,12 @@ public sealed class Device
     public int? ParentDeviceId { get; set; }
     public double? MapX { get; set; }
     public double? MapY { get; set; }
+    public string IfIncludePattern { get; set; } = "";
+    public string IfExcludePattern { get; set; } = "";
+    public string IfPatternSyntax { get; set; } = "glob";
+    public string IfMatchFields { get; set; } = "name,descr,alias";
+    public bool IfExcludeAdminDown { get; set; }
+    public bool IfRequireAlias { get; set; }
 
     public List<CustomOid> CustomOids { get; set; } = new();
 }
@@ -98,6 +104,8 @@ public sealed class InterfaceState
     public double? InUtil { get; set; }
     public double? OutUtil { get; set; }
     public bool Present { get; set; } = true;
+    public bool Monitored { get; set; } = true;
+    public bool? MonitorOverride { get; set; }
     public DateTime UpdatedAt { get; set; }
 }
 

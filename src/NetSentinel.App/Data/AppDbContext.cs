@@ -31,6 +31,12 @@ public sealed class AppDbContext : DbContext
             entity.Property(d => d.GroupName).HasMaxLength(80);
             entity.Property(d => d.Location).HasMaxLength(80);
             entity.Property(d => d.Tags).HasMaxLength(200);
+            entity.Property(d => d.IfIncludePattern).HasMaxLength(500).HasDefaultValue("");
+            entity.Property(d => d.IfExcludePattern).HasMaxLength(500).HasDefaultValue("");
+            entity.Property(d => d.IfPatternSyntax).HasMaxLength(16).HasDefaultValue("glob");
+            entity.Property(d => d.IfMatchFields).HasMaxLength(40).HasDefaultValue("name,descr,alias");
+            entity.Property(d => d.IfExcludeAdminDown).HasDefaultValue(false);
+            entity.Property(d => d.IfRequireAlias).HasDefaultValue(false);
             entity.HasIndex(d => new { d.Enabled, d.NextPollAt });
             entity.HasMany(d => d.CustomOids)
                 .WithOne(o => o.Device)
@@ -53,6 +59,7 @@ public sealed class AppDbContext : DbContext
         modelBuilder.Entity<InterfaceState>(entity =>
         {
             entity.HasKey(s => new { s.DeviceId, s.IfIndex });
+            entity.Property(s => s.Monitored).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<InterfaceSample>(entity =>
@@ -138,6 +145,19 @@ public static class SchemaUpgrader
         await AddColumn(connection, columns, "ParentDeviceId", "ALTER TABLE Devices ADD COLUMN ParentDeviceId INTEGER NULL", cancellationToken);
         await AddColumn(connection, columns, "MapX", "ALTER TABLE Devices ADD COLUMN MapX REAL NULL", cancellationToken);
         await AddColumn(connection, columns, "MapY", "ALTER TABLE Devices ADD COLUMN MapY REAL NULL", cancellationToken);
+        await AddColumn(connection, columns, "IfIncludePattern", "ALTER TABLE Devices ADD COLUMN IfIncludePattern TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumn(connection, columns, "IfExcludePattern", "ALTER TABLE Devices ADD COLUMN IfExcludePattern TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumn(connection, columns, "IfPatternSyntax", "ALTER TABLE Devices ADD COLUMN IfPatternSyntax TEXT NOT NULL DEFAULT 'glob'", cancellationToken);
+        await AddColumn(connection, columns, "IfMatchFields", "ALTER TABLE Devices ADD COLUMN IfMatchFields TEXT NOT NULL DEFAULT 'name,descr,alias'", cancellationToken);
+        await AddColumn(connection, columns, "IfExcludeAdminDown", "ALTER TABLE Devices ADD COLUMN IfExcludeAdminDown INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await AddColumn(connection, columns, "IfRequireAlias", "ALTER TABLE Devices ADD COLUMN IfRequireAlias INTEGER NOT NULL DEFAULT 0", cancellationToken);
+
+        var interfaceColumns = await ReadColumnNames(connection, "InterfaceStates", cancellationToken);
+        if (interfaceColumns.Count > 0)
+        {
+            await AddColumn(connection, interfaceColumns, "Monitored", "ALTER TABLE InterfaceStates ADD COLUMN Monitored INTEGER NOT NULL DEFAULT 1", cancellationToken);
+            await AddColumn(connection, interfaceColumns, "MonitorOverride", "ALTER TABLE InterfaceStates ADD COLUMN MonitorOverride INTEGER NULL", cancellationToken);
+        }
 
         foreach (var sql in new[]
         {

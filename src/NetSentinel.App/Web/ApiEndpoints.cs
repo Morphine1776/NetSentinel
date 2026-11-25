@@ -19,6 +19,9 @@ public static class ApiEndpoints
             return Results.Json(devices.Select(Summary));
         });
 
+        api.MapGet("/devices/board", async (AppDbContext db, CancellationToken cancellationToken) =>
+            Results.Json(await DeviceBoardBuilder.LoadAsync(db, cancellationToken)));
+
         api.MapGet("/devices/{id:int}", async (int id, bool? monitoredOnly, AppDbContext db) =>
         {
             var device = await db.Devices.AsNoTracking().Include(item => item.CustomOids).FirstOrDefaultAsync(item => item.Id == id);

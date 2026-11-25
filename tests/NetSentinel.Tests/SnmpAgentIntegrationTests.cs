@@ -90,6 +90,26 @@ public class SnmpAgentIntegrationTests
     }
 
     [Fact]
+    public void Demo_catalog_spans_locations_with_one_partly_down()
+    {
+        var devices = SimCatalog.DefaultAgents.Select(item => item.Device).ToList();
+        var locations = devices
+            .Select(device => device.Location.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        Assert.True(locations.Count >= 3);
+        Assert.Equal(devices.Count, SimCatalog.DefaultAgents.Select(item => item.Port).Distinct().Count());
+
+        var mixed = devices
+            .GroupBy(device => device.Location.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Any(group => group.Any(device => device.Answers) && group.Any(device => !device.Answers));
+        Assert.True(mixed);
+        Assert.Contains(devices, device => !device.Answers && device.Location == "Closet");
+        Assert.Contains(devices, device => device.Answers && device.Location == "MDF");
+        Assert.Contains(devices, device => device.Answers && device.Location == "IDF-2");
+    }
+
+    [Fact]
     public void Access_simulator_exposes_a_full_edge_of_ports()
     {
         Assert.Equal(26, SimCatalog.Access.Ports.Count);

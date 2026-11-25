@@ -84,7 +84,7 @@ The settings page is the place to change retention, the failure threshold, the t
 dotnet test NetSentinel.sln
 ```
 
-Unit tests cover 32-bit and 64-bit counter deltas, wraps, reboot resets, utilization, alert rules, interface filter evaluation (including manual override precedence), and the SQLite column upgrade. The integration test starts the simulator on an ephemeral port, polls it twice, and checks that `Gi0/0` reports about 100 Mbps inbound. A second test sends a trap and parses it.
+Unit tests cover 32-bit and 64-bit counter deltas, wraps, reboot resets, utilization, alert rules, interface filter evaluation (including manual override precedence), the SQLite column upgrade, and how the device list groups locations and colors them. The integration test starts the simulator on an ephemeral port, polls it twice, and checks that `Gi0/0` reports about 100 Mbps inbound. A second test sends a trap and parses it.
 
 ## Run in the console
 
@@ -117,28 +117,30 @@ dotnet run --project src/NetSentinel.SimAgent
 | Gi0/0 | about 100 Mbps in, 24 Mbps out, 1 Gbps link |
 | Gi0/1 | lighter traffic |
 | Gi0/2 | admin up, oper down |
-
-`sim-access-01` is the collapsed-edge example: Gi0/1 (`uplink`), Gi0/2 (`printer`, oper down), and Gi1/0/1 through Gi1/0/24. Most access ports have no ifAlias. Gi1/0/5 is `camera-lobby`, Gi1/0/10–12 have desk aliases, Gi1/0/21–22 are oper down, and Gi1/0/23–24 are administratively down. A filter of exclude `Gi1/0/*`, include `*uplink*`, or "only ports with an ifAlias" shows the difference on the device page.
 | Custom OID | `1.3.6.1.4.1.99999.1.0` gauge, a temperature around 42 |
 | Trap | one coldStart to `127.0.0.1:1162` shortly after start |
+
+`sim-access-01` is the collapsed-edge example: Gi0/1 (`uplink`), Gi0/2 (`printer`, oper down), and Gi1/0/1 through Gi1/0/24. Most access ports have no ifAlias. Gi1/0/5 is `camera-lobby`, Gi1/0/10–12 have desk aliases, Gi1/0/21–22 are oper down, and Gi1/0/23–24 are administratively down. A filter of exclude `Gi1/0/*`, include `*uplink*`, or "only ports with an ifAlias" shows the difference on the device page.
 
 Flags: `--port`, `--trap`, `--community`, `--no-trap`.
 
 Add a device for `127.0.0.1`, port `1161`, v2c, community `public`. A 5 second poll interval is enough to see the charts move. Bandwidth needs two successful polls because it is a delta.
 
-By default the simulator starts three devices so the network map has LLDP neighbors:
+By default the simulator starts five devices in four locations so the device page and the map have something to show. `sim-dist-02` and `sim-closet-01` bind a UDP port and do not answer SNMP, so the first poll marks them down. IDF-1 then has one device up and one down. Closet is entirely down.
 
-| sysName | UDP port |
-| --- | --- |
-| sim-core-01 | 1161 |
-| sim-dist-01 | 1163 |
-| sim-access-01 | 1164 |
+| sysName | UDP port | Location | SNMP |
+| --- | --- | --- | --- |
+| sim-core-01 | 1161 | MDF | answers |
+| sim-dist-01 | 1163 | IDF-1 | answers |
+| sim-dist-02 | 1165 | IDF-1 | silent |
+| sim-access-01 | 1164 | IDF-2 | answers |
+| sim-closet-01 | 1166 | Closet | silent |
 
-Core's Gi0/0 advertises dist, and Gi0/1 advertises access. Both sides advertise the link back. Pass `--single` (or `--port`) to run only the core device. The import template and the Map page are the easiest way to load all three: export is unnecessary for a first lab; a CSV with those names, hosts `127.0.0.1`, ports 1161/1163/1164, and parent `sim-core-01` on the other two is enough. The running core device is matched by sysName after its first poll even if its display name is different.
+Core's Gi0/0 advertises dist, and Gi0/1 advertises access. Both sides advertise the link back. Pass `--single` (or `--port`) to run only the core device. Put the same location on the device form (or in the CSV `location` column) as the table above. The device page groups on that field, not on the SNMP `sysLocation` string by itself. A CSV with those names, hosts `127.0.0.1`, the ports above, locations, and parent `sim-core-01` on the switches is enough to load the lab. The running core device is matched by sysName after its first poll even if its display name is different.
 
 ## Using the dashboard
 
-- **Devices.** Status, sysName, uptime, response time, and ping. Open a device for the interface table and charts. Ranges are 1 hour, 6 hours, 24 hours, and 7 days. Each row has a monitored checkbox. Select rows for "Monitor only selected", or unmonitor every down and admin-down port. "Clear manual overrides" lets the filters decide again. Unmonitored ports stay in the table only while "Show unmonitored" is on. They are still discovered, but polls do not keep bandwidth history for them and they do not raise interface or threshold alerts.
+- **Devices.** Grouped by the location field into collapsible cards. Blank locations sit in Unassigned. Matching ignores case and surrounding spaces, so `MDF` and `mdf` are one group. Each card shows the location, the device count, and how many are up (for example `2/3 up`), plus a down count when something is down. The border is green when every device is reporting, amber when some are down, and red when every device is down or any device there has an open or acknowledged critical alert. A label and an icon repeat that state: All reporting, Some down, All down, Critical alert, or Waiting when nothing is down but not every device has reported (or one is paused). Critical and partial groups come first, then locations that are still waiting, then healthy ones, A–Z inside each band. Expand all, collapse all, and which cards are open are remembered in this browser. Search matches name, IP, and location and opens the groups that hit. Down only hides devices that are up. Bubbles and a grouped list are both available, and the choice is remembered. The list reloads from `GET /api/devices/board` about every 45 seconds without reloading the page. Add, edit, delete, import, and export are the same actions as before. Open a device for the interface table and charts. Ranges are 1 hour, 6 hours, 24 hours, and 7 days. Each interface row has a monitored checkbox. Select rows for "Monitor only selected", or unmonitor every down and admin-down port. "Clear manual overrides" lets the filters decide again. Unmonitored ports stay in the table only while "Show unmonitored" is on. They are still discovered, but polls do not keep bandwidth history for them and they do not raise interface or threshold alerts.
 - **Edit.** Host, port, per-device poll interval, v1/v2c community, or v3 user with MD5/SHA-1/SHA-256/SHA-384/SHA-512 and DES/AES/AES-192/AES-256. Leave a stored v3 password blank to keep it. Custom OIDs are edited on the same form.
 - **Alerts.** Open and acknowledged items, plus history. Ack and resolve are manual; a cleared condition resolves the matching alert on the next poll.
 - **Traps.** Newest first, with varbinds. v1 and v2c are stored as they arrive. v3 traps are decrypted when the username matches a configured device. Informs get a response so the sender does not retry.
@@ -147,7 +149,7 @@ Core's Gi0/0 advertises dist, and Gi0/1 advertises access. Both sides advertise 
 - **Import.** Upload a CSV (template and export use the same columns). The preview lists ready rows, duplicates of devices you already have, and per-row errors. Choose skip or update for duplicates, then commit. Headers are case-insensitive and can appear in any order. Quoted commas are supported. The limit is 1,000 devices. Optional columns: `if_include`, `if_exclude`, `if_pattern` (`glob` or `regex`), `if_match` (`name`, `descr`, `alias`), `if_exclude_admin_down`, and `if_require_alias`. A missing column leaves the stored filter alone on update. An empty column clears it.
 - **Map.** Devices are nodes colored by live status. Edges come from LLDP (`lldpRemTable`) and CDP (`cdpCacheTable`) when the neighbor's sysName, chassis id, or management address matches one known device, plus the parent/uplink field and any manual link you add. A matched local interface shows link utilization when that port is monitored. "Show unmonitored" puts the percentage back. Drag a node to save its position. Group by the CSV group or location fields. Click a node to open the device. The map refreshes every 15 seconds.
 
-REST endpoints under `/api` accept the same cookie and, for POST, PUT, and DELETE, the header `X-NetSentinel: 1`. `GET /health` is anonymous.
+REST endpoints under `/api` accept the same cookie and, for POST, PUT, and DELETE, the header `X-NetSentinel: 1`. `GET /health` is anonymous. `GET /api/devices/board` returns the location groups, health, and the same device rows the Devices page draws.
 
 Interface monitoring:
 

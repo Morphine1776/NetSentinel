@@ -27,6 +27,7 @@ public sealed class SimDevice
     public string SysDescr { get; init; } = "NetSentinel Simulator";
     public string Location { get; init; } = "";
     public bool IncludeGauge { get; init; } = true;
+    public bool Answers { get; init; } = true;
     public IReadOnlyList<SimPort> Ports { get; init; } = Array.Empty<SimPort>();
     public IReadOnlyList<SimNeighbor> Lldp { get; init; } = Array.Empty<SimNeighbor>();
     public IReadOnlyList<SimNeighbor> Cdp { get; init; } = Array.Empty<SimNeighbor>();
@@ -114,6 +115,41 @@ public static class SimCatalog
             Lldp = new[] { Neighbor(1, "sim-core-01", "Gi0/1", "10.1.0.1") }
         };
     }
+
+    public static SimDevice DistributionDark { get; } = new()
+    {
+        SysName = "sim-dist-02",
+        SysDescr = "NetSentinel Simulator, distribution switch, silent",
+        Location = "IDF-1",
+        IncludeGauge = false,
+        Answers = false,
+        Ports = new[]
+        {
+            Port(1, "Gi0/1", "to-core", 2, 1_000_000_000, 1000, 0, 0)
+        }
+    };
+
+    public static SimDevice Closet { get; } = new()
+    {
+        SysName = "sim-closet-01",
+        SysDescr = "NetSentinel Simulator, closet switch, silent",
+        Location = "Closet",
+        IncludeGauge = false,
+        Answers = false,
+        Ports = new[]
+        {
+            Port(1, "Gi0/1", "uplink", 2, 1_000_000_000, 1000, 0, 0)
+        }
+    };
+
+    public static IReadOnlyList<(int Port, SimDevice Device)> DefaultAgents { get; } = new (int, SimDevice)[]
+    {
+        (1161, Core),
+        (1163, Distribution),
+        (1165, DistributionDark),
+        (1164, Access),
+        (1166, Closet)
+    };
 
     private static SimPort Port(int index, string name, string alias, int oper, ulong speed, int highSpeed, double inbound, double outbound, int admin = 1) => new()
     {

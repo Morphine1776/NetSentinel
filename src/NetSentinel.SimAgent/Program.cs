@@ -29,7 +29,7 @@ for (var i = 0; i < args.Length; i++)
         case "--help":
         case "-h":
             Console.WriteLine("NetSentinel SNMP simulator");
-            Console.WriteLine("  default             three devices on UDP 1161, 1163, and 1164");
+            Console.WriteLine("  default             five devices on UDP 1161, 1163, 1164, 1165, and 1166");
             Console.WriteLine("  --single            one device, on --port or 1161");
             Console.WriteLine("  --port <udp>        implies --single");
             Console.WriteLine("  --trap <udp>        trap destination (default 1162)");
@@ -46,9 +46,10 @@ if (single)
 }
 else
 {
-    agents.Add(new SimSnmpAgent(1161, community, SimCatalog.Core));
-    agents.Add(new SimSnmpAgent(1163, community, SimCatalog.Distribution));
-    agents.Add(new SimSnmpAgent(1164, community, SimCatalog.Access));
+    foreach (var (listenPort, device) in SimCatalog.DefaultAgents)
+    {
+        agents.Add(new SimSnmpAgent(listenPort, community, device));
+    }
 }
 
 foreach (var agent in agents)
@@ -60,7 +61,8 @@ Console.WriteLine("NetSentinel SNMP simulator");
 Console.WriteLine($"  community {community}");
 foreach (var agent in agents)
 {
-    Console.WriteLine($"  {agent.SysName,-14} udp://127.0.0.1:{agent.Port}");
+    var silence = agent.Answers ? "" : "  (does not answer)";
+    Console.WriteLine($"  {agent.SysName,-14} udp://127.0.0.1:{agent.Port}  {agent.Location}{silence}");
 }
 
 Console.WriteLine("  LLDP      core Gi0/0 — dist, core Gi0/1 — access");

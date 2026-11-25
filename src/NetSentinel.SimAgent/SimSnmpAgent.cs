@@ -37,6 +37,10 @@ public sealed class SimSnmpAgent : IDisposable
 
     public string SysName => _device.SysName;
 
+    public string Location => _device.Location;
+
+    public bool Answers => _device.Answers;
+
     public int Port { get; private set; }
 
     public void Start()
@@ -131,6 +135,11 @@ public sealed class SimSnmpAgent : IDisposable
 
     private void Handle(UdpClient udp, UdpReceiveResult result)
     {
+        if (!_device.Answers)
+        {
+            return;
+        }
+
         IList<ISnmpMessage> messages;
         try
         {

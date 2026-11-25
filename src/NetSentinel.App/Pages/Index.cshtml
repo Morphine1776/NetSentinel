@@ -2,7 +2,6 @@
 @model IndexModel
 @{
     ViewData["Title"] = "Devices";
-    ViewData["Refresh"] = "45";
 }
 <header class="top">
     <div>
@@ -11,80 +10,63 @@
     </div>
     <div class="actions">
         <a class="btn" href="/import">Import CSV</a>
+        <a class="btn" href="/api/devices/export">Export CSV</a>
         <a class="btn primary" href="/devices/edit">Add device</a>
     </div>
 </header>
 
-<section class="stats">
+<section class="stats" id="device-stats">
     <article>
         <span>Reachable</span>
-        <strong>@Model.Up</strong>
+        <strong id="stat-up">@Model.Board.Reachable</strong>
     </article>
     <article>
         <span>Down</span>
-        <strong class="danger">@Model.Down</strong>
+        <strong id="stat-down" class="danger">@Model.Board.Down</strong>
     </article>
     <article>
         <span>Waiting</span>
-        <strong>@Model.Pending</strong>
+        <strong id="stat-pending">@Model.Board.Waiting</strong>
     </article>
     <article>
         <span>Watched</span>
-        <strong>@Model.Devices.Count</strong>
+        <strong id="stat-watched">@Model.Board.Watched</strong>
     </article>
 </section>
 
-@if (Model.Devices.Count == 0)
-{
-    <section class="empty">
-        <h2>No devices yet</h2>
-        <p>Add a switch, router, or the loopback simulator. The simulator speaks SNMP on <span class="mono">127.0.0.1:1161</span> with community <span class="mono">public</span>.</p>
-        <a class="btn primary" href="/devices/edit">Add the first device</a>
-    </section>
-}
-else
-{
-    <div class="table-wrap">
-        <table class="responsive">
-            <thead>
-                <tr>
-                    <th>Status</th>
-                    <th>Device</th>
-                    <th>SNMP</th>
-                    <th>sysName</th>
-                    <th>Uptime</th>
-                    <th>Response</th>
-                    <th>Ping</th>
-                    <th>Last poll</th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var device in Model.Devices)
-            {
-                <tr>
-                    <td data-label="Status">
-                        <span class="status">
-                            <span class="lamp @TextFormat.Lamp(device)"></span>
-                            @TextFormat.Reachability(device)
-                        </span>
-                    </td>
-                    <td data-label="Device">
-                        <a class="device-link" href="/devices/@device.Id">@device.Name</a>
-                        <div class="sub mono">@device.Host:@device.Port · every @device.PollIntervalSeconds s</div>
-                        @if (!string.IsNullOrEmpty(device.LastError))
-                        {
-                            <div class="sub bad-text">@device.LastError</div>
-                        }
-                    </td>
-                    <td data-label="SNMP" class="mono">@TextFormat.Version(device.Version)</td>
-                    <td data-label="sysName">@(device.LastSysName ?? "—")</td>
-                    <td data-label="Uptime" class="mono">@TextFormat.Uptime(device.LastSysUpTimeTicks)</td>
-                    <td data-label="Response" class="mono">@TextFormat.Ms(device.LastResponseMs)</td>
-                    <td data-label="Ping">@TextFormat.Ping(device.LastPingOk)</td>
-                    <td data-label="Last poll" class="mono">@TextFormat.When(device.LastPollAt)</td>
-                </tr>
-            }
-            </tbody>
-        </table>
+<div class="device-tools" id="device-tools" @(Model.Board.Watched == 0 ? "hidden" : "")>
+    <label class="device-search">
+        Search
+        <input id="device-search" type="search" placeholder="Name, IP, or location" autocomplete="off" />
+    </label>
+    <label class="check" for="down-only">
+        <input id="down-only" type="checkbox" />
+        Down only
+    </label>
+    <div class="tool-group">
+        <button class="btn tiny" type="button" id="expand-all">Expand all</button>
+        <button class="btn tiny" type="button" id="collapse-all">Collapse all</button>
     </div>
+    <div class="view-toggle" role="group" aria-label="Layout">
+        <button type="button" id="view-grid" aria-pressed="true">Bubbles</button>
+        <button type="button" id="view-list" aria-pressed="false">List</button>
+    </div>
+    <p class="hint filter-summary" id="filter-summary"></p>
+    <p class="hint board-updated" id="board-updated">Live, refreshes every 45 seconds</p>
+</div>
+
+<section class="empty" id="device-empty" @(Model.Board.Watched == 0 ? "" : "hidden")>
+    <h2>No devices yet</h2>
+    <p>Add a switch, router, or the loopback simulator. The simulator speaks SNMP on <span class="mono">127.0.0.1:1161</span> with community <span class="mono">public</span>.</p>
+    <a class="btn primary" href="/devices/edit">Add the first device</a>
+</section>
+
+<div id="board" class="board grid" data-refresh="45"></div>
+<noscript>
+    <p class="hint">This page groups devices in the browser. Enable JavaScript to expand locations, search, and refresh.</p>
+</noscript>
+<script id="device-board-data" type="application/json">@Html.Raw(Model.BoardJson)</script>
+
+@section Scripts {
+    <script src="~/js/devices.js"></script>
 }

@@ -199,6 +199,7 @@ main { padding: 1.5rem 1.75rem 3rem; max-width: 1180px; }
 .identity .wide { grid-column: 1 / -1; }
 
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-elev); }
+.device-line { display: inline-flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; max-width: 100%; }
 .table-wrap.flat { border: 0; background: transparent; box-shadow: none; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 0.8rem 0.9rem; vertical-align: top; }
@@ -222,7 +223,7 @@ tbody tr[data-select-iface], tbody tr[data-select-custom] { cursor: pointer; }
 .lamp.down { background: var(--down); box-shadow: 0 0 0 4px rgba(255, 109, 87, 0.16); }
 .lamp.warn { background: var(--warn); box-shadow: 0 0 0 4px rgba(240, 193, 74, 0.16); }
 .lamp.off { background: #5c675c; }
-.status { display: inline-flex; align-items: center; gap: 0.55rem; }
+.status { display: inline-flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
 
 .pill {
   display: inline-flex;
@@ -286,6 +287,7 @@ tbody tr[data-select-iface], tbody tr[data-select-custom] { cursor: pointer; }
   margin-bottom: 1rem;
 }
 .banner.bad { background: rgba(255, 109, 87, 0.1); color: #ffd0c8; }
+.banner.warn { background: rgba(240, 193, 74, 0.12); color: #ffe7b8; }
 
 label { display: flex; flex-direction: column; gap: 0.35rem; color: var(--muted); background: transparent; font-size: 0.85rem; }
 input,
@@ -533,7 +535,20 @@ tr.row-Ready td { background: rgba(182, 242, 92, 0.04); }
 .chevron { color: var(--muted); display: inline-grid; flex: none; transition: transform 0.15s ease; }
 .bubble.open .chevron { transform: rotate(180deg); }
 .bubble-panel { padding: 0 0.55rem 0.7rem; }
-.bubble-panel .table-wrap { box-shadow: none; }
+.bubble-panel .table-wrap { box-shadow: none; overflow-x: auto; }
+@media (max-width: 1100px) {
+  .board table.responsive thead { display: none; }
+  .board table.responsive tr { display: block; border-top: 1px solid var(--line); padding: 0.45rem 0; }
+  .board table.responsive td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    border: 0;
+    padding: 0.35rem 0.8rem;
+  }
+  .board table.responsive td::before { content: attr(data-label); color: var(--muted); flex: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .chevron { transition: none; }
 }

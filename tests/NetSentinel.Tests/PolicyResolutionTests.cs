@@ -1,5 +1,6 @@
 using System.Text.Json;
 using NetSentinel.Core;
+using NetSentinel.Data;
 using NetSentinel.Services;
 
 namespace NetSentinel.Tests;
@@ -66,5 +67,99 @@ public class PolicyResolutionTests
         Assert.True(InterfaceMonitor.Evaluate(up, rules, null));
         Assert.True(InterfaceMonitor.Evaluate(down, rules, true));
         Assert.False(InterfaceMonitor.Evaluate(up, rules, false));
+    }
+
+    [Fact]
+    public void A_new_device_form_inherits_every_policy_field()
+    {
+        var global = PolicyValues.BuiltInDefaults();
+        global.IfIncludePattern = "*uplink*";
+        global.IfExcludePattern = "vlan.*;ae2.*";
+        global.IfPatternSyntax = "glob";
+        global.ExcludeAdminDown = true;
+        var inherited = PolicyResolver.Resolve(global, null, new PolicyValues(), "Global");
+        var form = PolicyStore.FormFrom(new PolicyValues(), inherited);
+
+        Assert.False(form.UseVersion);
+        Assert.False(form.UseCommunity);
+        Assert.False(form.UsePort);
+        Assert.False(form.UsePollInterval);
+        Assert.False(form.UseTimeout);
+        Assert.False(form.UseIfInclude);
+        Assert.False(form.UseIfExclude);
+        Assert.False(form.UseIfSyntax);
+        Assert.False(form.UseExcludeAdminDown);
+        Assert.False(form.UseUnmonitorDown);
+        Assert.False(form.UseAlertOnHaChange);
+        Assert.Equal("*uplink*", form.IfInclude);
+        Assert.Equal("vlan.*;ae2.*", form.IfExclude);
+
+        var written = PolicyStore.ApplyForm(new PolicyValues(), form, inheritAllowed: true);
+        Assert.Null(written.Version);
+        Assert.Null(written.Community);
+        Assert.Null(written.Port);
+        Assert.Null(written.IfIncludePattern);
+        Assert.Null(written.IfExcludePattern);
+        Assert.Null(written.ExcludeAdminDown);
+        Assert.Null(written.UnmonitorDown);
+    }
+
+    [Fact]
+    public void Only_a_changed_field_is_stored_and_copies_of_inherited_values_are_cleared()
+    {
+        var global = PolicyValues.BuiltInDefaults();
+        global.Community = "public";
+        global.IfIncludePattern = "*uplink*";
+        global.Port = 161;
+        var inherited = PolicyResolver.Resolve(global, null, null, "Global");
+        var form = PolicyStore.FormFrom(new PolicyValues(), inherited);
+        form.UseCommunity = true;
+        form.Community = "secret-ro";
+        form.UseIfInclude = true;
+        form.IfInclude = "*uplink*";
+        form.UsePort = true;
+        form.Port = 161;
+
+        var written = PolicyStore.DropMatches(PolicyStore.ApplyForm(new PolicyValues(), form, inheritAllowed: true), inherited);
+
+        Assert.Equal("secret-ro", written.Community);
+        Assert.Null(written.IfIncludePattern);
+        Assert.Null(written.Port);
+        Assert.Null(written.Version);
+    }
+
+    [Fact]
+    public void Blank_csv_inherits_and_a_repeated_host_is_a_warning_not_an_error()
+    {
+        const string csv = "name,host\nNew firewall,10.184.254.3\n";
+        var preview = CsvDevices.Preview(csv, new[] { new ExistingDeviceRef(4, "CGH-PA3440-1", "10.184.254.3", 161, null) });
+        var row = Assert.Single(preview.Rows);
+        Assert.Equal(CsvRowStatus.Duplicate, row.Status);
+        Assert.NotNull(row.Warning);
+        Assert.Contains("10.184.254.3", row.Warning, StringComparison.Ordinal);
+        Assert.Empty(row.Errors);
+    }
+
+    [Fact]
+    public void The_board_shows_one_row_and_an_explicit_na_badge_when_ha_is_unknown()
+    {
+        var now = DateTime.UtcNow;
+        var device = new Device
+        {
+            Id = 7,
+            Name = "CGH-PA3440-1",
+            Host = "10.184.254.3",
+            Location = "CGH",
+            Enabled = true,
+            LastPollAt = now,
+            LastSnmpOk = true,
+            Port = 161
+        };
+
+        var board = DeviceBoardBuilder.Build(new[] { device }, new HashSet<int>());
+        var row = Assert.Single(Assert.Single(board.Groups).Devices);
+        Assert.Equal("CGH-PA3440-1", row.Name);
+        Assert.Equal("N/A", row.HaLabel);
+        Assert.Equal("ha-na", row.HaClass);
     }
 }

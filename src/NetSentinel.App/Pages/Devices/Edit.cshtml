@@ -19,8 +19,17 @@
         }
     </div>
 }
+@if (Model.Warnings.Count > 0)
+{
+    <div class="banner warn" role="status">
+        @foreach (var warning in Model.Warnings)
+        {
+            <div>@warning</div>
+        }
+    </div>
+}
 
-<form method="post" class="stack" id="device-form">
+<form method="post" class="stack" id="device-form" autocomplete="off">
     <section class="panel form-grid">
         <label>
             Name
@@ -66,9 +75,19 @@
     <section class="panel" id="policy">
         <div class="panel-head">
             <h2>Policy</h2>
-            <p class="hint">Unchecked fields inherit. The most specific explicit value wins: device, then location, then global. Secrets are write-only.</p>
+            <p class="hint">Unchecked fields inherit and stay inherited when you save, even if the box shows that value. Check Override only for a value you want to pin on this device. Secrets are write-only.</p>
         </div>
         <partial name="_PolicyFields" model="Model.Editor" />
+        <div class="actions">
+            @if (Model.IsNew)
+            {
+                <button class="btn" type="button" id="reset-all-inherited">Reset all to inherited</button>
+            }
+            else
+            {
+                <button class="btn" type="submit" form="reset-policy">Reset all to inherited</button>
+            }
+        </div>
     </section>
 
     <section class="panel">
@@ -99,6 +118,7 @@
 
 @if (!Model.IsNew)
 {
+    <form id="reset-policy" method="post" asp-page-handler="ResetPolicy" asp-route-id="@Model.Input.Id" onsubmit="return confirm('Clear every policy override on this device?');"></form>
     <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Input.Id" class="danger-zone" onsubmit="return confirm('Remove this device and its stored samples?');">
         <div>
             <strong>Remove device</strong>

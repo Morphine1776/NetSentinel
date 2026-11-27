@@ -354,6 +354,39 @@ public static class PolicyStore
         return next;
     }
 
+    public static PolicyValues DropMatches(PolicyValues written, ResolvedPolicy inherited)
+    {
+        ArgumentNullException.ThrowIfNull(written);
+        ArgumentNullException.ThrowIfNull(inherited);
+        if (written.Version is SnmpVersion version && version == inherited.Version.Value)
+        {
+            written.Version = null;
+        }
+
+        if (Same(written.Community, inherited.Community.Value)) written.Community = null;
+        if (Same(written.V3User, inherited.V3User.Value)) written.V3User = null;
+        if (Same(written.V3AuthProtocol, inherited.V3AuthProtocol.Value)) written.V3AuthProtocol = null;
+        if (Same(written.V3AuthSecret, inherited.V3AuthSecret.Value)) written.V3AuthSecret = null;
+        if (Same(written.V3PrivProtocol, inherited.V3PrivProtocol.Value)) written.V3PrivProtocol = null;
+        if (Same(written.V3PrivSecret, inherited.V3PrivSecret.Value)) written.V3PrivSecret = null;
+        if (written.Port is int port && port == inherited.Port.Value) written.Port = null;
+        if (written.PollIntervalSeconds is int interval && interval == inherited.PollIntervalSeconds.Value) written.PollIntervalSeconds = null;
+        if (written.TimeoutMs is int timeout && timeout == inherited.TimeoutMs.Value) written.TimeoutMs = null;
+        if (written.Retries is int retries && retries == inherited.Retries.Value) written.Retries = null;
+        if (Same(written.IfIncludePattern, inherited.IfIncludePattern.Value)) written.IfIncludePattern = null;
+        if (Same(written.IfExcludePattern, inherited.IfExcludePattern.Value)) written.IfExcludePattern = null;
+        if (Same(written.IfPatternSyntax, inherited.IfPatternSyntax.Value)) written.IfPatternSyntax = null;
+        if (Same(written.IfMatchFields, inherited.IfMatchFields.Value)) written.IfMatchFields = null;
+        if (written.ExcludeAdminDown is bool admin && admin == inherited.ExcludeAdminDown.Value) written.ExcludeAdminDown = null;
+        if (written.RequireAlias is bool alias && alias == inherited.RequireAlias.Value) written.RequireAlias = null;
+        if (written.UnmonitorDown is bool down && down == inherited.UnmonitorDown.Value) written.UnmonitorDown = null;
+        if (written.AlertOnHaChange is bool alert && alert == inherited.AlertOnHaChange.Value) written.AlertOnHaChange = null;
+        return written;
+    }
+
+    private static bool Same(string? written, string? inherited)
+        => written is not null && string.Equals(written.Trim(), (inherited ?? "").Trim(), StringComparison.OrdinalIgnoreCase);
+
     public static List<string> Validate(ResolvedPolicy policy, PolicyValues written, bool requireConcrete)
     {
         var errors = new List<string>();

@@ -129,6 +129,7 @@ public static class DeviceBoardBuilder
     {
         var resolved = catalog?.Resolve(device);
         var ha = HaStatus.FromStored(device.HaState, device.HaPeerState, device.HaVendor, device.LastSnmpOk == true);
+        var label = string.IsNullOrWhiteSpace(ha.Label) ? "N/A" : ha.Label;
         var peer = string.IsNullOrWhiteSpace(ha.Peer) ? "" : "Peer " + ha.Peer;
         return new DeviceBoardRow(
             device.Id,
@@ -147,8 +148,8 @@ public static class DeviceBoardBuilder
             TextFormat.When(device.LastPollAt),
             device.LastError ?? "",
             TextFormat.Reachability(device) == "Down",
-            ha.Label,
-            ha.CssClass,
+            label,
+            string.IsNullOrWhiteSpace(ha.CssClass) ? "ha-na" : ha.CssClass,
             peer);
     }
 }

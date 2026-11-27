@@ -27,6 +27,8 @@ public sealed class EditModel : PageModel
 
     public List<string> Errors { get; private set; } = new();
 
+    public List<string> Warnings { get; private set; } = new();
+
     public List<Device> OtherDevices { get; private set; } = new();
 
     public ResolvedPolicy Effective { get; private set; } = null!;
@@ -96,6 +98,7 @@ public sealed class EditModel : PageModel
         if (!saved.Ok || saved.Device is null)
         {
             Errors = saved.Errors;
+            Warnings = saved.Warnings;
             await LoadOthersAsync();
             if (Input.CustomOids.Count == 0)
             {
@@ -106,7 +109,30 @@ public sealed class EditModel : PageModel
             return Page();
         }
 
+        if (saved.Warnings.Count > 0)
+        {
+            TempData["Warning"] = string.Join(" ", saved.Warnings);
+        }
+
         return Redirect($"/devices/{saved.Device.Id}");
+    }
+
+    public async Task<IActionResult> OnPostResetPolicyAsync(int id)
+    {
+        var device = await _db.Devices.Include(item => item.CustomOids).FirstOrDefaultAsync(item => item.Id == id);
+        if (device is null)
+        {
+            return NotFound();
+        }
+
+        PolicyStore.WriteDevice(device, new PolicyValues());
+        device.UpdatedAt = DateTime.UtcNow;
+        var states = await _db.InterfaceStates.Where(state => state.DeviceId == id).ToListAsync();
+        var catalog = await PolicyStore.LoadAsync(_db);
+        InterfaceMonitorService.Apply(catalog.Resolve(device).InterfaceRules(), states);
+        await _db.SaveChangesAsync();
+        TempData["Warning"] = "Policy overrides were cleared. This device now inherits.";
+        return RedirectToPage(new { id });
     }
 
     public async Task<IActionResult> OnPostDeleteAsync(int id)

@@ -53,7 +53,8 @@ public sealed record CsvPreviewRow(
     CsvRowStatus Status,
     int? ExistingDeviceId,
     string? DuplicateMatch,
-    IReadOnlyList<string> Errors);
+    IReadOnlyList<string> Errors,
+    string? Warning = null);
 
 public sealed record CsvPreview(
     string? FileError,
@@ -407,7 +408,10 @@ public static class CsvDevices
             item.Errors.Count > 0 ? CsvRowStatus.Error : item.ExistingId is null ? CsvRowStatus.Ready : CsvRowStatus.Duplicate,
             item.Errors.Count > 0 ? null : item.ExistingId,
             item.Errors.Count > 0 ? null : item.Match,
-            item.Errors)).ToList();
+            item.Errors,
+            item.Errors.Count == 0 && item.Match == "host"
+                ? $"{item.Row.Host}:{(string.IsNullOrWhiteSpace(item.Row.Port) ? "161" : item.Row.Port)} is already used. You can update that device or skip this row."
+                : null)).ToList();
     }
 
     public static bool TryParseVersion(string? text, out SnmpVersion version)

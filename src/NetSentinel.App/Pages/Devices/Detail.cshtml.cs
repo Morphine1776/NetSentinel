@@ -47,6 +47,8 @@ public sealed class DetailModel : PageModel
 
     public string? BulkError { get; private set; }
 
+    public string? Warning { get; private set; }
+
     public async Task<IActionResult> OnGetAsync(int id, int? iface, int? custom, int range = 60, int unmonitored = 0)
     {
         var device = await _db.Devices.AsNoTracking().Include(item => item.CustomOids).FirstOrDefaultAsync(item => item.Id == id);
@@ -56,6 +58,7 @@ public sealed class DetailModel : PageModel
         }
 
         Device = device;
+        Warning = TempData["Warning"] as string;
         var catalog = await PolicyStore.LoadAsync(_db);
         Effective = catalog.Resolve(device);
         StoredPolicy = PolicyStore.FromDevice(device);

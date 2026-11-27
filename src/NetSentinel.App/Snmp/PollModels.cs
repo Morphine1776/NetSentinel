@@ -51,6 +51,7 @@ public sealed class PollResult
     public string? Error { get; set; }
     public int? ResponseTimeMs { get; set; }
     public string? SysDescr { get; set; }
+    public string? SysObjectId { get; set; }
     public string? SysName { get; set; }
     public long? SysUpTimeTicks { get; set; }
     public DateTime SampledAt { get; set; } = DateTime.UtcNow;

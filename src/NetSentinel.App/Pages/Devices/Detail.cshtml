@@ -9,6 +9,10 @@
     ViewData["Range"] = Model.Range;
     var device = Model.Device;
 }
+@if (!string.IsNullOrEmpty(Model.Warning))
+{
+    <div class="banner warn" role="status">@Model.Warning</div>
+}
 <header class="top">
     <div>
         <p class="eyebrow"><a href="/">Devices</a> / @TextFormat.Version(Model.Effective.Version.Value)</p>

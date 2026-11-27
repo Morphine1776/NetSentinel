@@ -39,6 +39,7 @@ public sealed class DeviceSaveResult
 {
     public Device? Device { get; init; }
     public List<string> Errors { get; init; } = new();
+    public List<string> Warnings { get; init; } = new();
     public bool Ok => Errors.Count == 0;
 }
 
@@ -213,6 +214,8 @@ public sealed class DeviceAdminService
             written = PolicyStore.ApplyForm(current, policy, inheritAllowed: true);
             await PolicyStore.EnsureLocationAsync(_db, input.Location, cancellationToken);
             var catalog = await PolicyStore.LoadAsync(_db, cancellationToken);
+            var parent = catalog.Resolve(new Device { Location = (input.Location ?? "").Trim() });
+            written = PolicyStore.DropMatches(written, parent);
             var preview = new Device
             {
                 Location = (input.Location ?? "").Trim(),
@@ -338,6 +341,7 @@ public sealed class DeviceAdminService
 
         await PolicyStore.EnsureLocationAsync(_db, device.Location, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
+        var warnings = await DuplicateWarningsAsync(device, cancellationToken);
         if (written is not null)
         {
             var states = await _db.InterfaceStates.Where(state => state.DeviceId == device.Id).ToListAsync(cancellationToken);
@@ -346,7 +350,7 @@ public sealed class DeviceAdminService
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        return new DeviceSaveResult { Device = device };
+        return new DeviceSaveResult { Device = device, Warnings = warnings };
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
@@ -368,6 +372,31 @@ public sealed class DeviceAdminService
         _db.Devices.Remove(device);
         await _db.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    private async Task<List<string>> DuplicateWarningsAsync(Device device, CancellationToken cancellationToken)
+    {
+        var catalog = await PolicyStore.LoadAsync(_db, cancellationToken);
+        var port = catalog.Resolve(device).Port.Value;
+        var host = device.Host.Trim();
+        var warnings = new List<string>();
+        var others = await _db.Devices.AsNoTracking().Where(item => item.Id != device.Id).ToListAsync(cancellationToken);
+        foreach (var other in others)
+        {
+            if (!string.Equals(other.Host.Trim(), host, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (catalog.Resolve(other).Port.Value != port)
+            {
+                continue;
+            }
+
+            warnings.Add($"{host}:{port} is already used by {other.Name}. This device was still saved.");
+        }
+
+        return warnings;
     }
 
     public static bool IsOid(string? text)

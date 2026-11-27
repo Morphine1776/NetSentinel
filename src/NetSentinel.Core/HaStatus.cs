@@ -40,10 +40,52 @@ public static class HaStatus
         new CiscoRfHaVendor()
     };
 
-    public static HaReading Resolve(Func<IReadOnlyList<string>, HaProbeAnswer> query)
+    public static bool LooksLikePaloAlto(string? sysObjectId, string? sysDescr)
+    {
+        var oid = NormalizeOid(sysObjectId);
+        if (oid.StartsWith("1.3.6.1.4.1.25461", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var text = sysDescr ?? "";
+        return text.Contains("Palo Alto", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("PAN-OS", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("PA-3440", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool LooksLikeCisco(string? sysObjectId, string? sysDescr)
+    {
+        var oid = NormalizeOid(sysObjectId);
+        if (oid.StartsWith("1.3.6.1.4.1.9.", StringComparison.Ordinal) || oid == "1.3.6.1.4.1.9")
+        {
+            return true;
+        }
+
+        return (sysDescr ?? "").Contains("Cisco", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static IReadOnlyList<IHaVendor> ForDevice(string? sysObjectId, string? sysDescr)
+    {
+        var palo = Vendors.First(vendor => vendor.Id == "paloalto");
+        var cisco = Vendors.First(vendor => vendor.Id == "cisco-rf");
+        if (LooksLikePaloAlto(sysObjectId, sysDescr) && !LooksLikeCisco(sysObjectId, sysDescr))
+        {
+            return new IHaVendor[] { palo, cisco };
+        }
+
+        if (LooksLikeCisco(sysObjectId, sysDescr) && !LooksLikePaloAlto(sysObjectId, sysDescr))
+        {
+            return new IHaVendor[] { cisco, palo };
+        }
+
+        return Vendors;
+    }
+
+    public static HaReading Resolve(Func<IReadOnlyList<string>, HaProbeAnswer> query, IReadOnlyList<IHaVendor>? vendors = null)
     {
         ArgumentNullException.ThrowIfNull(query);
-        foreach (var vendor in Vendors)
+        foreach (var vendor in vendors ?? Vendors)
         {
             var state = query(vendor.StateOids);
             var interpreted = vendor.Interpret(state.Raw, !state.Answered);
@@ -109,6 +151,9 @@ public static class HaStatus
 
     private static string? BlankToNull(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string NormalizeOid(string? oid)
+        => (oid ?? "").Trim().TrimStart('.');
 }
 
 public sealed class PaloAltoHaVendor : IHaVendor
@@ -169,7 +214,7 @@ public sealed class PaloAltoHaVendor : IHaVendor
 
     public static string? Canonical(string raw)
     {
-        var text = raw.Trim().Trim('"').ToLowerInvariant().Replace('_', '-').Replace(' ', '-');
+        var text = raw.Trim().Trim('\0').Trim('"').ToLowerInvariant().Replace('_', '-').Replace(' ', '-');
         while (text.Contains("--", StringComparison.Ordinal))
         {
             text = text.Replace("--", "-", StringComparison.Ordinal);

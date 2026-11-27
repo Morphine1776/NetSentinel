@@ -261,7 +261,7 @@
     const table = el("table", "responsive");
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["Status", "HA", "Device", "SNMP", "sysName", "Uptime", "Response", "Ping", "Last poll"].forEach(function (label) {
+    ["Status", "Device", "SNMP", "sysName", "Uptime", "Response", "Ping", "Last poll"].forEach(function (label) {
       headRow.appendChild(el("th", null, label));
     });
     head.appendChild(headRow);
@@ -272,7 +272,6 @@
       const row = document.createElement("tr");
       row.append(
         statusCell(device),
-        haCell(device),
         deviceCell(device),
         textCell("SNMP", device.version, true),
         textCell("sysName", device.sysName, false),
@@ -288,31 +287,31 @@
     return wrap;
   }
 
+  function haBadge(device) {
+    const label = (device.haLabel || "").trim() || "N/A";
+    const badge = el("span", "ha-badge " + (device.haClass || "ha-na"), label);
+    badge.title = device.haPeer ? device.haPeer : "HA " + label;
+    return badge;
+  }
+
   function statusCell(device) {
     const cell = document.createElement("td");
     cell.dataset.label = "Status";
     const status = el("span", "status");
-    status.append(el("span", "lamp " + (device.lamp || "off")), document.createTextNode(device.status || ""));
+    status.append(el("span", "lamp " + (device.lamp || "off")), document.createTextNode(device.status || ""), haBadge(device));
     cell.appendChild(status);
-    return cell;
-  }
-
-  function haCell(device) {
-    const cell = document.createElement("td");
-    cell.dataset.label = "HA";
-    const badge = el("span", "ha-badge " + (device.haClass || "ha-na"), device.haLabel || "N/A");
-    if (device.haPeer) badge.title = device.haPeer;
-    cell.appendChild(badge);
     return cell;
   }
 
   function deviceCell(device) {
     const cell = document.createElement("td");
     cell.dataset.label = "Device";
+    const line = el("span", "device-line");
     const link = el("a", "device-link", device.name || "");
     link.href = "/devices/" + device.id;
+    line.append(link, haBadge(device));
     cell.append(
-      link,
+      line,
       el("div", "sub mono", (device.host || "") + ":" + device.port + " · every " + device.pollIntervalSeconds + " s")
     );
     if (device.lastError) cell.appendChild(el("div", "sub bad-text", device.lastError));

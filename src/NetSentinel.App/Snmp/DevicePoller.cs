@@ -12,6 +12,7 @@ namespace NetSentinel.Snmp;
 public sealed class DevicePoller
 {
     public const string SysDescr = "1.3.6.1.2.1.1.1.0";
+    public const string SysObjectId = "1.3.6.1.2.1.1.2.0";
     public const string SysUpTime = "1.3.6.1.2.1.1.3.0";
     public const string SysName = "1.3.6.1.2.1.1.5.0";
     public const string IfTable = "1.3.6.1.2.1.2.2";
@@ -86,6 +87,22 @@ public sealed class DevicePoller
                 result.SysUpTimeTicks = (long)ticks;
             }
 
+            try
+            {
+                var identity = Get(target, endpoint, timeout, new[] { SysObjectId }, ref report, privacy);
+                var objectId = identity.FirstOrDefault()?.Data;
+                if (objectId is not null && !SnmpValues.IsException(objectId))
+                {
+                    result.SysObjectId = Trim(SnmpValues.Format(objectId), 200);
+                }
+
+                _logger.LogDebug("sysObjectID {Host} {Oid}", target.Host, result.SysObjectId ?? "(none)");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "sysObjectID read failed for {Host}", target.Host);
+            }
+
             List<Variable> ifTable;
             List<Variable> ifX = new();
             try
@@ -116,11 +133,17 @@ public sealed class DevicePoller
             result.Neighbors = ReadNeighbors(target, endpoint, timeout, ref report, privacy);
             try
             {
-                var ha = ReadHa(target, endpoint, timeout, ref report, privacy);
+                var ha = ReadHa(target, endpoint, timeout, result.SysObjectId, result.SysDescr, ref report, privacy);
                 result.HaState = ha.Token;
                 result.HaPeerState = ha.Peer;
                 result.HaVendor = ha.Vendor;
                 result.HaRead = true;
+                _logger.LogDebug(
+                    "HA result {Host} vendor={Vendor} state={State} peer={Peer}",
+                    target.Host,
+                    ha.Vendor ?? "(none)",
+                    ha.Label,
+                    ha.Peer ?? "(none)");
             }
             catch (Exception ex)
             {
@@ -216,12 +239,17 @@ public sealed class DevicePoller
         DevicePollTarget target,
         IPEndPoint endpoint,
         int timeout,
+        string? sysObjectId,
+        string? sysDescr,
         ref ISnmpMessage? report,
         IPrivacyProvider? privacy)
     {
         var reportBox = report;
         var privacyBox = privacy;
-        var reading = HaStatus.Resolve(oids => Probe(target, endpoint, timeout, oids, ref reportBox, ref privacyBox));
+        var vendors = HaStatus.ForDevice(sysObjectId, sysDescr);
+        var reading = HaStatus.Resolve(
+            oids => Probe(target, endpoint, timeout, oids, ref reportBox, ref privacyBox),
+            vendors);
         report = reportBox;
         privacy = privacyBox;
         return reading;
@@ -235,26 +263,131 @@ public sealed class DevicePoller
         ref ISnmpMessage? report,
         ref IPrivacyProvider? privacy)
     {
+        foreach (var oid in oids.Where(item => item.EndsWith(".0", StringComparison.Ordinal)))
+        {
+            if (TryGet(target, endpoint, timeout, oid, ref report, ref privacy) is string value)
+            {
+                return new HaProbeAnswer(true, value);
+            }
+        }
+
         foreach (var oid in oids)
         {
-            try
+            var baseOid = oid.EndsWith(".0", StringComparison.Ordinal) ? oid[..^2] : oid;
+            if (TryGetNext(target, endpoint, timeout, baseOid, ref report, ref privacy) is string value)
             {
-                var variables = Get(target, endpoint, timeout, new[] { oid }, ref report, privacy);
-                var data = variables.FirstOrDefault()?.Data;
-                if (data is null || SnmpValues.IsException(data))
-                {
-                    continue;
-                }
-
-                return new HaProbeAnswer(true, Trim(SnmpValues.Format(data), 80));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "HA OID {Oid} failed for {Host}", oid, target.Host);
+                return new HaProbeAnswer(true, value);
             }
         }
 
         return new HaProbeAnswer(false, null);
+    }
+
+    private string? TryGet(
+        DevicePollTarget target,
+        IPEndPoint endpoint,
+        int timeout,
+        string oid,
+        ref ISnmpMessage? report,
+        ref IPrivacyProvider? privacy)
+    {
+        try
+        {
+            var variables = Get(target, endpoint, timeout, new[] { oid }, ref report, privacy);
+            var variable = variables.FirstOrDefault();
+            var text = Describe(variable);
+            _logger.LogDebug("HA GET {Host} {Oid} -> {Value}", target.Host, oid, text ?? "(no variable)");
+            if (variable is null || SnmpValues.IsException(variable.Data) || HaStatus.IsMissingToken(text))
+            {
+                return null;
+            }
+
+            return Trim(text, 80);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "HA GET {Host} {Oid} failed", target.Host, oid);
+            return null;
+        }
+    }
+
+    private string? TryGetNext(
+        DevicePollTarget target,
+        IPEndPoint endpoint,
+        int timeout,
+        string baseOid,
+        ref ISnmpMessage? report,
+        ref IPrivacyProvider? privacy)
+    {
+        try
+        {
+            var variables = GetNext(target, endpoint, timeout, baseOid, ref report, ref privacy);
+            var variable = variables.FirstOrDefault();
+            var returned = variable?.Id.ToString();
+            var text = Describe(variable);
+            _logger.LogDebug("HA GETNEXT {Host} {Base} -> {Oid} {Value}", target.Host, baseOid, returned ?? "(none)", text ?? "(none)");
+            if (variable is null || string.IsNullOrEmpty(returned) || SnmpValues.IsException(variable.Data) || HaStatus.IsMissingToken(text))
+            {
+                return null;
+            }
+
+            if (!returned.Equals(baseOid, StringComparison.Ordinal)
+                && !returned.StartsWith(baseOid + ".", StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return Trim(text, 80);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "HA GETNEXT {Host} {Base} failed", target.Host, baseOid);
+            return null;
+        }
+    }
+
+    private static string? Describe(Variable? variable)
+        => variable is null ? null : SnmpValues.Format(variable.Data);
+
+    private static IList<Variable> GetNext(
+        DevicePollTarget target,
+        IPEndPoint endpoint,
+        int timeout,
+        string oid,
+        ref ISnmpMessage? report,
+        ref IPrivacyProvider? privacy)
+    {
+        var variables = new List<Variable> { new(new ObjectIdentifier(oid)) };
+        ISnmpMessage reply;
+        if (target.Version == SnmpVersion.V3)
+        {
+            report ??= Discover(endpoint, timeout);
+            privacy ??= SnmpPrivacy.Create(target.V3AuthProtocol, target.V3AuthPassword, target.V3PrivProtocol, target.V3PrivPassword);
+            var request = new GetNextRequestMessage(
+                VersionCode.V3,
+                Messenger.NextMessageId,
+                Messenger.NextRequestId,
+                new OctetString(target.V3User),
+                new OctetString(target.V3Context ?? ""),
+                variables,
+                privacy,
+                Messenger.MaxMessageSize,
+                report);
+            reply = request.GetResponse(timeout, endpoint);
+        }
+        else
+        {
+            var version = target.Version == SnmpVersion.V1 ? VersionCode.V1 : VersionCode.V2;
+            var request = new GetNextRequestMessage(
+                Messenger.NextRequestId,
+                version,
+                new OctetString(target.Community ?? ""),
+                variables);
+            reply = request.GetResponse(timeout, endpoint);
+        }
+
+        EnsureOk(reply);
+        return reply.Pdu().Variables;
     }
 
     private static string FormatNeighborValue(Variable variable)

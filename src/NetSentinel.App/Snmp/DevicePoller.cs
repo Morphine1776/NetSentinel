@@ -103,6 +103,29 @@ public sealed class DevicePoller
                 _logger.LogDebug(ex, "sysObjectID read failed for {Host}", target.Host);
             }
 
+            try
+            {
+                var ha = ReadHa(target, endpoint, timeout, result.SysObjectId, result.SysDescr, ref report, privacy);
+                result.HaState = ha.Token;
+                result.HaPeerState = ha.Peer;
+                result.HaVendor = ha.Vendor;
+                result.HaRead = true;
+                result.HaProbeFailed = ha.ProbeFailed;
+                _logger.LogDebug(
+                    "HA result {Host} vendor={Vendor} state={State} peer={Peer} probeFailed={ProbeFailed}",
+                    target.Host,
+                    ha.Vendor ?? "(none)",
+                    ha.Label,
+                    ha.Peer ?? "(none)",
+                    ha.ProbeFailed);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "HA poll failed for {Host}", target.Host);
+                result.HaRead = true;
+                result.HaProbeFailed = true;
+            }
+
             List<Variable> ifTable;
             List<Variable> ifX = new();
             try
@@ -131,26 +154,6 @@ public sealed class DevicePoller
             result.SampledAt = DateTime.UtcNow;
             result.CustomOids = ReadCustom(target, endpoint, timeout, ref report, privacy);
             result.Neighbors = ReadNeighbors(target, endpoint, timeout, ref report, privacy);
-            try
-            {
-                var ha = ReadHa(target, endpoint, timeout, result.SysObjectId, result.SysDescr, ref report, privacy);
-                result.HaState = ha.Token;
-                result.HaPeerState = ha.Peer;
-                result.HaVendor = ha.Vendor;
-                result.HaRead = true;
-                _logger.LogDebug(
-                    "HA result {Host} vendor={Vendor} state={State} peer={Peer}",
-                    target.Host,
-                    ha.Vendor ?? "(none)",
-                    ha.Label,
-                    ha.Peer ?? "(none)");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "HA poll failed for {Host}", target.Host);
-                result.HaRead = true;
-            }
-
             result.SnmpOk = true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -247,6 +250,7 @@ public sealed class DevicePoller
         var reportBox = report;
         var privacyBox = privacy;
         var vendors = HaStatus.ForDevice(sysObjectId, sysDescr);
+        _logger.LogDebug("HA probe {Host} vendors={Vendors}", target.Host, string.Join(",", vendors.Select(vendor => vendor.Id)));
         var reading = HaStatus.Resolve(
             oids => Probe(target, endpoint, timeout, oids, ref reportBox, ref privacyBox),
             vendors);
@@ -291,24 +295,32 @@ public sealed class DevicePoller
         ref ISnmpMessage? report,
         ref IPrivacyProvider? privacy)
     {
-        try
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            var variables = Get(target, endpoint, timeout, new[] { oid }, ref report, privacy);
-            var variable = variables.FirstOrDefault();
-            var text = Describe(variable);
-            _logger.LogDebug("HA GET {Host} {Oid} -> {Value}", target.Host, oid, text ?? "(no variable)");
-            if (variable is null || SnmpValues.IsException(variable.Data) || HaStatus.IsMissingToken(text))
+            try
             {
-                return null;
-            }
+                var variables = Get(target, endpoint, timeout, new[] { oid }, ref report, privacy);
+                var variable = variables.FirstOrDefault();
+                var text = Describe(variable);
+                _logger.LogDebug("HA GET {Host} {Oid} -> {Value}", target.Host, oid, text ?? "(no variable)");
+                if (variable is null || SnmpValues.IsException(variable.Data) || HaStatus.IsMissingToken(text))
+                {
+                    return null;
+                }
 
-            return Trim(text, 80);
+                return Trim(text, 80);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "HA GET {Host} {Oid} failed{Retry}", target.Host, oid, attempt == 1 ? "; retrying" : "");
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "HA GET {Host} {Oid} failed", target.Host, oid);
-            return null;
-        }
+
+        return null;
     }
 
     private string? TryGetNext(
@@ -319,31 +331,39 @@ public sealed class DevicePoller
         ref ISnmpMessage? report,
         ref IPrivacyProvider? privacy)
     {
-        try
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            var variables = GetNext(target, endpoint, timeout, baseOid, ref report, ref privacy);
-            var variable = variables.FirstOrDefault();
-            var returned = variable?.Id.ToString();
-            var text = Describe(variable);
-            _logger.LogDebug("HA GETNEXT {Host} {Base} -> {Oid} {Value}", target.Host, baseOid, returned ?? "(none)", text ?? "(none)");
-            if (variable is null || string.IsNullOrEmpty(returned) || SnmpValues.IsException(variable.Data) || HaStatus.IsMissingToken(text))
+            try
             {
-                return null;
-            }
+                var variables = GetNext(target, endpoint, timeout, baseOid, ref report, ref privacy);
+                var variable = variables.FirstOrDefault();
+                var returned = variable?.Id.ToString();
+                var text = Describe(variable);
+                _logger.LogDebug("HA GETNEXT {Host} {Base} -> {Oid} {Value}", target.Host, baseOid, returned ?? "(none)", text ?? "(none)");
+                if (variable is null || string.IsNullOrEmpty(returned) || SnmpValues.IsException(variable.Data) || HaStatus.IsMissingToken(text))
+                {
+                    return null;
+                }
 
-            if (!returned.Equals(baseOid, StringComparison.Ordinal)
-                && !returned.StartsWith(baseOid + ".", StringComparison.Ordinal))
+                if (!returned.Equals(baseOid, StringComparison.Ordinal)
+                    && !returned.StartsWith(baseOid + ".", StringComparison.Ordinal))
+                {
+                    return null;
+                }
+
+                return Trim(text, 80);
+            }
+            catch (OperationCanceledException)
             {
-                return null;
+                throw;
             }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "HA GETNEXT {Host} {Base} failed{Retry}", target.Host, baseOid, attempt == 1 ? "; retrying" : "");
+            }
+        }
 
-            return Trim(text, 80);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "HA GETNEXT {Host} {Base} failed", target.Host, baseOid);
-            return null;
-        }
+        return null;
     }
 
     private static string? Describe(Variable? variable)

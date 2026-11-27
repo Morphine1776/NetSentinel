@@ -45,7 +45,7 @@ Built-in alerts:
 - Device down after N consecutive SNMP failures (default 2), and device up when it recovers.
 - Interface down when `ifOperStatus` is down or lower-layer-down and the interface is not administratively down. Unmonitored interfaces are skipped, and an open interface alert closes when the port is unmonitored.
 - Reboot when `sysUpTime` decreases between successful polls.
-- HA state change (info) when a device's high-availability role changes, for example active to passive. The alert follows an inheritable policy and is on by default. The first reading is stored and does not alert.
+- HA state change (info) when a device's high-availability role changes, for example active to passive. The alert follows an inheritable policy and is on by default, and it can be turned off for one device: in that device's Policy section, check Override beside HA change alert and clear the box, or set the CSV `alert_on_ha` column to `no`. The first reading is stored and does not alert. A change between two known roles (active, passive, suspended, non-functional, and the rest) alerts on that poll. A change where either side is N/A waits until the same new value comes back on two consecutive successful HA reads, so one missed reply does not flap the role or send mail. A timed-out, unanswered, or failed HA read keeps the last role, peer, and vendor, raises no alert, and does not invent N/A. An answered `disabled` is a real N/A and uses that two-read wait.
 - linkDown and linkUp traps open or clear the same interface-down alert when the port is monitored. The trap is still stored either way. An unmonitored port does not raise an alert.
 
 Threshold rules cover response time, interface bitrates, utilization, and custom OID values or rates. Optional SMTP mail fires when an alert opens or clears.
@@ -78,6 +78,8 @@ The dashboard is cookie-authenticated. Credentials live in `appsettings.json`, n
 | `Retention:CleanupIntervalMinutes` | `60` | How often the cleanup job runs. |
 
 The settings page is the place to change retention, the failure threshold, the trap port, and SMTP after the first run. SNMP communities and v3 passwords are stored in the SQLite file. Protect that file.
+
+HA poll lines are written at Debug. To see them, set `"NetSentinel.Snmp.DevicePoller": "Debug"` under `Logging:LogLevel` in `appsettings.json`.
 
 SNMP and interface-monitoring settings are a policy with three layers: Global, then Location, then Device. Each layer stores only the fields it overrides. A null field inherits. The most specific explicit value wins. A manual per-interface checkbox still wins over every layer. The poller reads the resolved values on each cycle, so a saved policy applies on the next poll without a service restart.
 
@@ -173,7 +175,7 @@ Interface monitoring:
 | POST | `/api/devices/{id}/walk` | `{ "baseOid": "1.3.6.1.2.1.99.1.1.1.4", "maxRows": 500 }` walks that device with its resolved SNMP settings. |
 | POST | `/api/devices/walk` | Walk a host that is not saved yet. Send `host`, `location`, optional `deviceId`, `baseOid`, `maxRows`, and the policy override flags from the form. |
 
-HA polling is vendor-specific. Palo Alto uses `panSysHAState` (`1.3.6.1.4.1.25461.2.1.2.1.11.0`, then the same OID without `.0`) and may also read `panSysHAPeerState` (`.12.0`) for the tooltip. Cisco redundancy framework uses `cRFStatusUnitState` (`1.3.6.1.4.1.9.9.176.1.1.2.0`). A missing OID is N/A, not an error, and does not fail the rest of the poll. `Unmonitor all down / admin-down` is also a standing policy: ports that are oper-down or admin-down stay unmonitored until a manual checkbox says otherwise.
+HA polling runs just after the system and sysObjectID reads, before the interface and neighbor walks. The HA GET is tried once more when it throws or times out. Palo Alto uses `panSysHAState` (`1.3.6.1.4.1.25461.2.1.2.1.11.0`, then the same OID without `.0`) and may also read `panSysHAPeerState` (`.12.0`) for the tooltip. Cisco redundancy framework uses `cRFStatusUnitState` (`1.3.6.1.4.1.9.9.176.1.1.2.0`). A device identified as Palo Alto is not also probed for the Cisco OIDs, and a Cisco device is not probed for the Palo Alto OIDs. Unknown devices try both. An answered `disabled` is N/A. A timeout, exception, `noSuchObject`, `noSuchInstance`, or `endOfMibView` keeps the last known role instead of inventing N/A, and it does not fail the rest of the poll. `Unmonitor all down / admin-down` is also a standing policy: ports that are oper-down or admin-down stay unmonitored until a manual checkbox says otherwise.
 
 `GET /api/devices/{id}` includes every discovered interface, the policy, and `monitored` / `monitorOverride` on each row. `?monitoredOnly=true` drops the unmonitored rows. `GET /api/map?showUnmonitored=true` includes utilization for links whose local port is not monitored.
 

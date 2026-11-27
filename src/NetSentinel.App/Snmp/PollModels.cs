@@ -62,4 +62,5 @@ public sealed class PollResult
     public string? HaPeerState { get; set; }
     public string? HaVendor { get; set; }
     public bool HaRead { get; set; }
+    public bool HaProbeFailed { get; set; }
 }

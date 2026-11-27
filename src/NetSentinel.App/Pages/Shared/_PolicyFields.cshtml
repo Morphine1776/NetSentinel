@@ -333,6 +333,7 @@
         {
             <p class="inherit-note">Inherited @(effective.AlertOnHaChange.Value ? "yes" : "no") @Phrase(effective.AlertOnHaChange)</p>
         }
-        <label class="check"><input type="checkbox" name="@(prefix).AlertOnHaChange" value="true" checked="@form.AlertOnHaChange" /> <span>Alert when HA state changes</span></label>
+        <label class="check" title="Turn this off for one device by checking Override on that device and clearing the box."><input type="checkbox" name="@(prefix).AlertOnHaChange" value="true" checked="@form.AlertOnHaChange" /> <span>Alert when HA state changes</span></label>
+        <p class="hint">Can be turned off for one device. Check Override on that device and clear this box.</p>
     </div>
 </div>

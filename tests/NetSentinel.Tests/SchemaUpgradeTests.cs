@@ -32,6 +32,8 @@ public class SchemaUpgradeTests
             Assert.Contains("IfIncludePattern", deviceColumns);
             Assert.Contains("IfExcludePattern", deviceColumns);
             Assert.Contains("IfExcludeAdminDown", deviceColumns);
+            Assert.Contains("HaPendingState", deviceColumns);
+            Assert.Contains("HaPendingCount", deviceColumns);
             Assert.Contains("Monitored", interfaceColumns);
             Assert.Contains("MonitorOverride", interfaceColumns);
 
@@ -101,6 +103,8 @@ public class SchemaUpgradeTests
             Assert.Null(device.TimeoutMs);
             Assert.Null(device.Retries);
             Assert.Null(device.AlertOnHaChange);
+            Assert.Null(device.HaPendingState);
+            Assert.Equal(0, device.HaPendingCount);
 
             var connection = db.Database.GetDbConnection();
             if (connection.State != ConnectionState.Open)
@@ -126,6 +130,55 @@ public class SchemaUpgradeTests
             var location = await db.Policies.SingleAsync(policy => policy.Scope == "location" && policy.LocationKey == "FMC");
             Assert.Null(location.Community);
             Assert.Equal("FMC", location.DisplayName);
+        }
+        finally
+        {
+            foreach (var suffix in new[] { "", "-wal", "-shm" })
+            {
+                try
+                {
+                    File.Delete(path + suffix);
+                }
+                catch (IOException)
+                {
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Upgrade_adds_ha_pending_columns_without_clearing_ha_state()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "netsentinel-ha-" + Guid.NewGuid().ToString("n") + ".db");
+        try
+        {
+            var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite($"Data Source={path}").Options;
+            await using var db = new AppDbContext(options);
+            await db.Database.ExecuteSqlRawAsync(
+                "CREATE TABLE Devices (Id INTEGER NOT NULL CONSTRAINT PK_Devices PRIMARY KEY AUTOINCREMENT, Name TEXT NOT NULL, HaState TEXT NULL, HaPeerState TEXT NULL, HaVendor TEXT NULL)");
+            await db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO Devices (Name, HaState, HaPeerState, HaVendor) VALUES ('fw', 'passive', 'active', 'paloalto')");
+            await SchemaUpgrader.ApplyAsync(db);
+
+            var connection = db.Database.GetDbConnection();
+            if (connection.State != ConnectionState.Open)
+            {
+                await connection.OpenAsync();
+            }
+
+            var columns = await Columns(connection, "Devices");
+            Assert.Contains("HaPendingState", columns);
+            Assert.Contains("HaPendingCount", columns);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT HaState, HaPeerState, HaVendor, HaPendingState, HaPendingCount FROM Devices WHERE Name = 'fw'";
+            await using var reader = await command.ExecuteReaderAsync();
+            Assert.True(await reader.ReadAsync());
+            Assert.Equal("passive", reader.GetString(0));
+            Assert.Equal("active", reader.GetString(1));
+            Assert.Equal("paloalto", reader.GetString(2));
+            Assert.True(reader.IsDBNull(3));
+            Assert.Equal(0L, reader.GetInt64(4));
         }
         finally
         {

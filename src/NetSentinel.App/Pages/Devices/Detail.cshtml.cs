@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using NetSentinel.Core;
 using NetSentinel.Data;
 using NetSentinel.Services;
 
@@ -36,6 +37,12 @@ public sealed class DetailModel : PageModel
 
     public InterfacePolicyInput Policy { get; set; } = new();
 
+    public ResolvedPolicy Effective { get; private set; } = null!;
+
+    public PolicyValues StoredPolicy { get; private set; } = new();
+
+    public HaReading Ha { get; private set; } = HaReading.Unavailable;
+
     public string? FilterError { get; private set; }
 
     public string? BulkError { get; private set; }
@@ -49,7 +56,11 @@ public sealed class DetailModel : PageModel
         }
 
         Device = device;
-        Policy = InterfaceMonitorService.ReadInput(device);
+        var catalog = await PolicyStore.LoadAsync(_db);
+        Effective = catalog.Resolve(device);
+        StoredPolicy = PolicyStore.FromDevice(device);
+        Ha = HaStatus.FromStored(device.HaState, device.HaPeerState, device.HaVendor, device.LastSnmpOk == true);
+        Policy = InterfaceMonitorService.ReadInput(Effective);
         ShowUnmonitored = unmonitored == 1;
         var present = await _db.InterfaceStates.AsNoTracking()
             .Where(item => item.DeviceId == id && item.Present)
@@ -72,11 +83,48 @@ public sealed class DetailModel : PageModel
         return Page();
     }
 
-    public async Task<IActionResult> OnPostFiltersAsync(int id, InterfacePolicyInput policy, bool showUnmonitored, int range = 60, int? iface = null, int? custom = null)
+    public async Task<IActionResult> OnPostFiltersAsync(
+        int id,
+        InterfacePolicyInput policy,
+        bool useInclude,
+        bool useExclude,
+        bool useSyntax,
+        bool useMatch,
+        bool useAdmin,
+        bool useAlias,
+        bool useUnmonitor,
+        bool unmonitorDown,
+        bool showUnmonitored,
+        int range = 60,
+        int? iface = null,
+        int? custom = null)
     {
-        var error = await _monitor.SavePolicyAsync(id, policy, HttpContext.RequestAborted);
+        var device = await _db.Devices.FirstOrDefaultAsync(item => item.Id == id);
+        if (device is null)
+        {
+            return NotFound();
+        }
+
+        var current = PolicyStore.FromDevice(device);
+        current.IfIncludePattern = useInclude ? (policy.IncludePattern ?? "").Trim() : null;
+        current.IfExcludePattern = useExclude ? (policy.ExcludePattern ?? "").Trim() : null;
+        current.IfPatternSyntax = useSyntax ? (policy.Syntax ?? "glob").Trim() : null;
+        current.IfMatchFields = useMatch ? InterfaceMonitor.FormatFields(policy.MatchName, policy.MatchDescr, policy.MatchAlias) : null;
+        current.ExcludeAdminDown = useAdmin ? policy.ExcludeAdminDown : null;
+        current.RequireAlias = useAlias ? policy.RequireAlias : null;
+        current.UnmonitorDown = useUnmonitor ? unmonitorDown : null;
+        var preview = new Device { Location = device.Location };
+        PolicyStore.WriteDevice(preview, current);
+        var catalog = await PolicyStore.LoadAsync(_db);
+        var error = InterfaceMonitor.Validate(catalog.Resolve(preview).InterfaceRules());
         if (error is null)
         {
+            PolicyStore.WriteDevice(device, current);
+            device.UpdatedAt = DateTime.UtcNow;
+            await PolicyStore.EnsureLocationAsync(_db, device.Location);
+            var states = await _db.InterfaceStates.Where(state => state.DeviceId == id).ToListAsync();
+            InterfaceMonitorService.Apply(catalog.Resolve(device).InterfaceRules(), states);
+            await _db.SaveChangesAsync();
             return RedirectToPage(new { id, range, iface, custom, unmonitored = showUnmonitored ? 1 : 0 });
         }
 

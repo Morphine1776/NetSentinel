@@ -86,21 +86,22 @@ public sealed class PollWorker : BackgroundService
                 return;
             }
 
-            var options = _options.Value;
+            var catalog = await PolicyStore.LoadAsync(db, cancellationToken);
+            var effective = catalog.Resolve(device);
             var target = new DevicePollTarget(
                 device.Host,
-                device.Port,
-                device.Version,
-                device.Community,
-                device.V3User,
+                effective.Port.Value,
+                effective.Version.Value,
+                effective.Community.Value,
+                effective.V3User.Value,
                 device.V3Context,
-                device.V3AuthProtocol,
-                device.V3AuthPassword,
-                device.V3PrivProtocol,
-                device.V3PrivPassword,
+                effective.V3AuthProtocol.Value,
+                effective.V3AuthSecret.Value,
+                effective.V3PrivProtocol.Value,
+                effective.V3PrivSecret.Value,
                 device.CustomOids.Select(oid => new CustomOidTarget(oid.Id, oid.Name, oid.Oid)).ToList(),
-                options.TimeoutMs,
-                options.Retries);
+                effective.TimeoutMs.Value,
+                effective.Retries.Value);
 
             PollResult result;
             try
@@ -126,7 +127,7 @@ public sealed class PollWorker : BackgroundService
 
             var uptimeReset = CounterMath.IsUptimeReset(device.LastSysUpTimeTicks, result.SysUpTimeTicks);
             var currentInterfaces = new List<InterfaceSnapshot>();
-            var monitorRules = InterfaceMonitorService.RulesFor(device);
+            var monitorRules = effective.InterfaceRules();
             if (result.SnmpOk)
             {
                 var seen = new HashSet<int>();
@@ -170,7 +171,7 @@ public sealed class PollWorker : BackgroundService
                     state.Present = true;
                     state.UpdatedAt = result.SampledAt;
                     var monitored = InterfaceMonitor.Evaluate(
-                        new InterfaceIdentity(reading.IfName, reading.IfDescr, reading.IfAlias, reading.AdminStatus),
+                        new InterfaceIdentity(reading.IfName, reading.IfDescr, reading.IfAlias, reading.AdminStatus, reading.OperStatus),
                         monitorRules,
                         state.MonitorOverride);
                     state.Monitored = monitored;
@@ -283,7 +284,22 @@ public sealed class PollWorker : BackgroundService
             device.LastSnmpOk = result.SnmpOk;
             device.LastResponseMs = result.ResponseTimeMs;
             device.LastPollAt = result.SampledAt;
-            device.NextPollAt = DateTime.UtcNow.AddSeconds(Math.Max(5, device.PollIntervalSeconds));
+            device.NextPollAt = DateTime.UtcNow.AddSeconds(Math.Max(5, effective.PollIntervalSeconds.Value));
+            AlertTransition? haAlert = null;
+            if (result.SnmpOk && result.HaRead)
+            {
+                haAlert = HaAlerts.Change(
+                    $"device:{device.Id}",
+                    device.Name,
+                    device.HaCheckedAt is not null,
+                    device.HaState,
+                    result.HaState,
+                    effective.AlertOnHaChange.Value);
+                device.HaState = result.HaState;
+                device.HaPeerState = result.HaPeerState;
+                device.HaVendor = result.HaVendor;
+                device.HaCheckedAt = result.SampledAt;
+            }
 
             var rules = await db.Rules.AsNoTracking()
                 .Where(rule => rule.Enabled && (rule.DeviceId == null || rule.DeviceId == device.Id))
@@ -302,6 +318,10 @@ public sealed class PollWorker : BackgroundService
                 Math.Max(1, settings.FailureThreshold),
                 rules.Select(rule => new AlertRuleModel(rule.Id, rule.Name, rule.Metric, rule.InterfaceFilter, rule.Operator, rule.Threshold, rule.Severity)).ToList(),
                 openKeys.ToHashSet(StringComparer.Ordinal));
+            if (haAlert is not null)
+            {
+                transitions.Add(haAlert);
+            }
 
             var now = DateTime.UtcNow;
             foreach (var transition in transitions)

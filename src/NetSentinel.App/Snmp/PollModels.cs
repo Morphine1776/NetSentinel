@@ -57,4 +57,8 @@ public sealed class PollResult
     public List<InterfaceReading> Interfaces { get; set; } = new();
     public List<CustomOidReading> CustomOids { get; set; } = new();
     public List<NeighborObservation> Neighbors { get; set; } = new();
+    public string? HaState { get; set; }
+    public string? HaPeerState { get; set; }
+    public string? HaVendor { get; set; }
+    public bool HaRead { get; set; }
 }

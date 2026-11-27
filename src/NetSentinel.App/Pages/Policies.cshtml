@@ -1,0 +1,86 @@
+@page "/policies"
+@model NetSentinel.Pages.PoliciesModel
+@{
+    ViewData["Title"] = "Policies";
+}
+<header class="top">
+    <div>
+        <p class="eyebrow">Settings</p>
+        <h1>Policies</h1>
+    </div>
+</header>
+
+@if (!string.IsNullOrEmpty(Model.Saved))
+{
+    <p class="banner" role="status">Saved. The next poll uses these values. No service restart is required.</p>
+}
+@if (Model.Errors.Count > 0)
+{
+    <div class="banner bad" role="alert">
+        @foreach (var error in Model.Errors)
+        {
+            <div>@error</div>
+        }
+    </div>
+}
+
+<section class="panel" id="global-policy">
+    <div class="panel-head">
+        <h2>Global</h2>
+        <p class="hint">Base values for every device. A location or a device overrides a field only when that field is set there. Secrets are write-only: a blank box keeps the stored secret.</p>
+    </div>
+    <form method="post" asp-page-handler="Global" class="stack">
+        <input type="hidden" asp-for="LocationKey" />
+        <partial name="_PolicyFields" model="Model.GlobalEditor" />
+        <div class="actions">
+            <button class="btn primary" type="submit">Save global policy</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel" id="location-policy">
+    <div class="panel-head">
+        <h2>Location</h2>
+        <p class="hint">Locations are created when a device uses them. A blank override inherits from Global. The link on each location bubble opens that location here.</p>
+    </div>
+    @if (Model.LocationChoices.Count == 0)
+    {
+        <p class="empty-inline">No locations yet. Add a device with a location and it will show up here.</p>
+    }
+    else
+    {
+        <form method="get" class="inline-form">
+            <label>
+                Location
+                <select name="location" onchange="this.form.submit()">
+                    @foreach (var choice in Model.LocationChoices)
+                    {
+                        if (choice.Key == Model.LocationKey)
+                        {
+                            <option value="@choice.Key" selected>@choice.Display</option>
+                        }
+                        else
+                        {
+                            <option value="@choice.Key">@choice.Display</option>
+                        }
+                    }
+                </select>
+            </label>
+            <noscript><button class="btn" type="submit">Open</button></noscript>
+        </form>
+        @if (Model.LocationEditor is not null)
+        {
+            <form method="post" asp-page-handler="Location" class="stack">
+                <input type="hidden" asp-for="LocationKey" />
+                <partial name="_PolicyFields" model="Model.LocationEditor" />
+                <div class="actions">
+                    <button class="btn primary" type="submit">Save @Model.LocationName</button>
+                </div>
+            </form>
+        }
+    }
+</section>
+
+@section Scripts {
+    <script src="~/js/policy.js"></script>
+}

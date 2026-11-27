@@ -114,6 +114,20 @@ public sealed class DevicePoller
             result.SampledAt = DateTime.UtcNow;
             result.CustomOids = ReadCustom(target, endpoint, timeout, ref report, privacy);
             result.Neighbors = ReadNeighbors(target, endpoint, timeout, ref report, privacy);
+            try
+            {
+                var ha = ReadHa(target, endpoint, timeout, ref report, privacy);
+                result.HaState = ha.Token;
+                result.HaPeerState = ha.Peer;
+                result.HaVendor = ha.Vendor;
+                result.HaRead = true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "HA poll failed for {Host}", target.Host);
+                result.HaRead = true;
+            }
+
             result.SnmpOk = true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -196,6 +210,51 @@ public sealed class DevicePoller
         }
 
         return NeighborTables.Parse(bindings);
+    }
+
+    private HaReading ReadHa(
+        DevicePollTarget target,
+        IPEndPoint endpoint,
+        int timeout,
+        ref ISnmpMessage? report,
+        IPrivacyProvider? privacy)
+    {
+        var reportBox = report;
+        var privacyBox = privacy;
+        var reading = HaStatus.Resolve(oids => Probe(target, endpoint, timeout, oids, ref reportBox, ref privacyBox));
+        report = reportBox;
+        privacy = privacyBox;
+        return reading;
+    }
+
+    private HaProbeAnswer Probe(
+        DevicePollTarget target,
+        IPEndPoint endpoint,
+        int timeout,
+        IReadOnlyList<string> oids,
+        ref ISnmpMessage? report,
+        ref IPrivacyProvider? privacy)
+    {
+        foreach (var oid in oids)
+        {
+            try
+            {
+                var variables = Get(target, endpoint, timeout, new[] { oid }, ref report, privacy);
+                var data = variables.FirstOrDefault()?.Data;
+                if (data is null || SnmpValues.IsException(data))
+                {
+                    continue;
+                }
+
+                return new HaProbeAnswer(true, Trim(SnmpValues.Format(data), 80));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "HA OID {Oid} failed for {Host}", oid, target.Host);
+            }
+        }
+
+        return new HaProbeAnswer(false, null);
     }
 
     private static string FormatNeighborValue(Variable variable)

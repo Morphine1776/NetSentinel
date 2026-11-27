@@ -28,6 +28,8 @@ public sealed class SimDevice
     public string Location { get; init; } = "";
     public bool IncludeGauge { get; init; } = true;
     public bool Answers { get; init; } = true;
+    public string? HaState { get; init; }
+    public string? HaPeerState { get; init; }
     public IReadOnlyList<SimPort> Ports { get; init; } = Array.Empty<SimPort>();
     public IReadOnlyList<SimNeighbor> Lldp { get; init; } = Array.Empty<SimNeighbor>();
     public IReadOnlyList<SimNeighbor> Cdp { get; init; } = Array.Empty<SimNeighbor>();
@@ -129,6 +131,36 @@ public static class SimCatalog
         }
     };
 
+    public static SimDevice FirewallActive { get; } = new()
+    {
+        SysName = "sim-fw-01",
+        SysDescr = "NetSentinel Simulator, Palo Alto firewall",
+        Location = "FMC",
+        IncludeGauge = false,
+        HaState = "active",
+        HaPeerState = "passive",
+        Ports = new[]
+        {
+            Port(1, "ethernet1/1", "trust", 1, 1_000_000_000, 1000, 4_000_000, 1_500_000),
+            Port(2, "ethernet1/2", "untrust", 1, 1_000_000_000, 1000, 1_500_000, 4_000_000)
+        }
+    };
+
+    public static SimDevice FirewallPassive { get; } = new()
+    {
+        SysName = "sim-fw-02",
+        SysDescr = "NetSentinel Simulator, Palo Alto firewall",
+        Location = "FMC",
+        IncludeGauge = false,
+        HaState = "passive",
+        HaPeerState = "active",
+        Ports = new[]
+        {
+            Port(1, "ethernet1/1", "trust", 1, 1_000_000_000, 1000, 20_000, 12_000),
+            Port(2, "ethernet1/2", "untrust", 2, 1_000_000_000, 1000, 0, 0)
+        }
+    };
+
     public static SimDevice Closet { get; } = new()
     {
         SysName = "sim-closet-01",
@@ -148,7 +180,9 @@ public static class SimCatalog
         (1163, Distribution),
         (1165, DistributionDark),
         (1164, Access),
-        (1166, Closet)
+        (1166, Closet),
+        (1167, FirewallActive),
+        (1168, FirewallPassive)
     };
 
     private static SimPort Port(int index, string name, string alias, int oper, ulong speed, int highSpeed, double inbound, double outbound, int admin = 1) => new()

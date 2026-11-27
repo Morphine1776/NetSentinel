@@ -207,7 +207,12 @@
       copy(group),
       chevron()
     );
-    article.appendChild(button);
+    const head = el("div", "bubble-head");
+    const policy = el("a", "btn tiny policy-link", "Policy");
+    policy.href = "/policies?location=" + encodeURIComponent(key.length ? key : "unassigned");
+    policy.addEventListener("click", function (event) { event.stopPropagation(); });
+    head.append(button, policy);
+    article.appendChild(head);
 
     if (open) {
       const panel = el("div", "bubble-panel");
@@ -256,7 +261,7 @@
     const table = el("table", "responsive");
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["Status", "Device", "SNMP", "sysName", "Uptime", "Response", "Ping", "Last poll"].forEach(function (label) {
+    ["Status", "HA", "Device", "SNMP", "sysName", "Uptime", "Response", "Ping", "Last poll"].forEach(function (label) {
       headRow.appendChild(el("th", null, label));
     });
     head.appendChild(headRow);
@@ -267,6 +272,7 @@
       const row = document.createElement("tr");
       row.append(
         statusCell(device),
+        haCell(device),
         deviceCell(device),
         textCell("SNMP", device.version, true),
         textCell("sysName", device.sysName, false),
@@ -288,6 +294,15 @@
     const status = el("span", "status");
     status.append(el("span", "lamp " + (device.lamp || "off")), document.createTextNode(device.status || ""));
     cell.appendChild(status);
+    return cell;
+  }
+
+  function haCell(device) {
+    const cell = document.createElement("td");
+    cell.dataset.label = "HA";
+    const badge = el("span", "ha-badge " + (device.haClass || "ha-na"), device.haLabel || "N/A");
+    if (device.haPeer) badge.title = device.haPeer;
+    cell.appendChild(badge);
     return cell;
   }
 

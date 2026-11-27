@@ -14,7 +14,8 @@ public enum AlertKind
     DeviceReboot = 2,
     InterfaceDown = 3,
     InterfaceUp = 4,
-    Threshold = 5
+    Threshold = 5,
+    HaChange = 6
 }
 
 public enum ThresholdOperator

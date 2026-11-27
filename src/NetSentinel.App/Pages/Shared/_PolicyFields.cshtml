@@ -1,0 +1,338 @@
+@model NetSentinel.Pages.Shared.PolicyEditorModel
+@{
+    var form = Model.Form;
+    var effective = Model.Inherited ?? Model.Effective;
+    var prefix = Model.Prefix;
+    string Phrase<T>(NetSentinel.Core.ResolvedValue<T> field) => Model.AllowInherit ? NetSentinel.Services.PolicyStore.Phrase(field) : "on Global";
+}
+<div class="policy-grid">
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>SNMP version</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseVersion" value="true" checked="@form.UseVersion" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @TextFormat.Version(effective.Version.Value) @Phrase(effective.Version)</p>
+        }
+        <select name="@(prefix).Version">
+            @foreach (var option in new[] { "V1", "V2C", "V3" })
+            {
+                if (string.Equals(form.Version, option, StringComparison.OrdinalIgnoreCase))
+                {
+                    <option value="@option" selected>@(option == "V1" ? "SNMP v1" : option == "V3" ? "SNMP v3" : "SNMP v2c")</option>
+                }
+                else
+                {
+                    <option value="@option">@(option == "V1" ? "SNMP v1" : option == "V3" ? "SNMP v3" : "SNMP v2c")</option>
+                }
+            }
+        </select>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Community</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseCommunity" value="true" checked="@form.UseCommunity" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited <span class="mono">@(string.IsNullOrEmpty(effective.Community.Value) ? "(empty)" : effective.Community.Value)</span> @Phrase(effective.Community)</p>
+        }
+        <input name="@(prefix).Community" value="@form.Community" maxlength="128" autocomplete="off" />
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>SNMP port</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UsePort" value="true" checked="@form.UsePort" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @effective.Port.Value @Phrase(effective.Port)</p>
+        }
+        <input name="@(prefix).Port" type="number" min="1" max="65535" value="@form.Port" />
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Poll interval (seconds)</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UsePollInterval" value="true" checked="@form.UsePollInterval" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @effective.PollIntervalSeconds.Value s @Phrase(effective.PollIntervalSeconds)</p>
+        }
+        <input name="@(prefix).PollIntervalSeconds" type="number" min="5" max="86400" value="@form.PollIntervalSeconds" />
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Timeout (ms)</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseTimeout" value="true" checked="@form.UseTimeout" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @effective.TimeoutMs.Value ms @Phrase(effective.TimeoutMs)</p>
+        }
+        <input name="@(prefix).TimeoutMs" type="number" min="200" max="30000" value="@form.TimeoutMs" />
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Retries</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseRetries" value="true" checked="@form.UseRetries" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @effective.Retries.Value @Phrase(effective.Retries)</p>
+        }
+        <input name="@(prefix).Retries" type="number" min="0" max="5" value="@form.Retries" />
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>v3 user</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseV3User" value="true" checked="@form.UseV3User" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited <span class="mono">@(string.IsNullOrEmpty(effective.V3User.Value) ? "(none)" : effective.V3User.Value)</span> @Phrase(effective.V3User)</p>
+        }
+        <input name="@(prefix).V3User" value="@form.V3User" maxlength="64" autocomplete="off" />
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Auth protocol</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseV3AuthProtocol" value="true" checked="@form.UseV3AuthProtocol" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @effective.V3AuthProtocol.Value @Phrase(effective.V3AuthProtocol)</p>
+        }
+        <select name="@(prefix).V3AuthProtocol">
+            @foreach (var option in new[] { "None", "MD5", "SHA1", "SHA256", "SHA384", "SHA512" })
+            {
+                if (string.Equals(form.V3AuthProtocol, option, StringComparison.OrdinalIgnoreCase))
+                {
+                    <option selected>@option</option>
+                }
+                else
+                {
+                    <option>@option</option>
+                }
+            }
+        </select>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Auth secret</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseV3AuthSecret" value="true" checked="@form.UseV3AuthSecret" /> <span>Override</span></label>
+            }
+        </div>
+        <p class="inherit-note">@(form.UseV3AuthSecret ? "Set on this level. " : "Inherited " + Phrase(effective.V3AuthSecret) + ". ")Leave blank to keep the stored secret.</p>
+        <input name="@(prefix).V3AuthSecret" type="password" autocomplete="new-password" placeholder="Write-only" />
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Privacy protocol</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseV3PrivProtocol" value="true" checked="@form.UseV3PrivProtocol" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @effective.V3PrivProtocol.Value @Phrase(effective.V3PrivProtocol)</p>
+        }
+        <select name="@(prefix).V3PrivProtocol">
+            @foreach (var option in new[] { "None", "DES", "AES", "AES192", "AES256" })
+            {
+                if (string.Equals(form.V3PrivProtocol, option, StringComparison.OrdinalIgnoreCase))
+                {
+                    <option selected>@option</option>
+                }
+                else
+                {
+                    <option>@option</option>
+                }
+            }
+        </select>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Privacy secret</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseV3PrivSecret" value="true" checked="@form.UseV3PrivSecret" /> <span>Override</span></label>
+            }
+        </div>
+        <p class="inherit-note">@(form.UseV3PrivSecret ? "Set on this level. " : "Inherited " + Phrase(effective.V3PrivSecret) + ". ")Leave blank to keep the stored secret.</p>
+        <input name="@(prefix).V3PrivSecret" type="password" autocomplete="new-password" placeholder="Write-only" />
+    </div>
+
+    <div class="policy-field span-2" data-policy-field>
+        <div class="policy-field-head">
+            <span>Include patterns</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseIfInclude" value="true" checked="@form.UseIfInclude" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited <span class="mono">@(string.IsNullOrEmpty(effective.IfIncludePattern.Value) ? "(none)" : effective.IfIncludePattern.Value)</span> @Phrase(effective.IfIncludePattern)</p>
+        }
+        <textarea name="@(prefix).IfInclude" maxlength="500">@form.IfInclude</textarea>
+    </div>
+
+    <div class="policy-field span-2" data-policy-field>
+        <div class="policy-field-head">
+            <span>Exclude patterns</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseIfExclude" value="true" checked="@form.UseIfExclude" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited <span class="mono">@(string.IsNullOrEmpty(effective.IfExcludePattern.Value) ? "(none)" : effective.IfExcludePattern.Value)</span> @Phrase(effective.IfExcludePattern)</p>
+        }
+        <textarea name="@(prefix).IfExclude" maxlength="500">@form.IfExclude</textarea>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Pattern match</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseIfSyntax" value="true" checked="@form.UseIfSyntax" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @effective.IfPatternSyntax.Value @Phrase(effective.IfPatternSyntax)</p>
+        }
+        <select name="@(prefix).IfSyntax">
+            @if (string.Equals(form.IfSyntax, "regex", StringComparison.OrdinalIgnoreCase))
+            {
+                <option value="glob">Glob</option>
+                <option value="regex" selected>Regular expression</option>
+            }
+            else
+            {
+                <option value="glob" selected>Glob</option>
+                <option value="regex">Regular expression</option>
+            }
+        </select>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Match fields</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseIfMatch" value="true" checked="@form.UseIfMatch" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @effective.IfMatchFields.Value @Phrase(effective.IfMatchFields)</p>
+        }
+        <div class="checks">
+            <label class="check"><input type="checkbox" name="@(prefix).MatchName" value="true" checked="@form.MatchName" /> <span>ifName</span></label>
+            <label class="check"><input type="checkbox" name="@(prefix).MatchDescr" value="true" checked="@form.MatchDescr" /> <span>ifDescr</span></label>
+            <label class="check"><input type="checkbox" name="@(prefix).MatchAlias" value="true" checked="@form.MatchAlias" /> <span>ifAlias</span></label>
+        </div>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Skip admin-down</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseExcludeAdminDown" value="true" checked="@form.UseExcludeAdminDown" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @(effective.ExcludeAdminDown.Value ? "yes" : "no") @Phrase(effective.ExcludeAdminDown)</p>
+        }
+        <label class="check"><input type="checkbox" name="@(prefix).ExcludeAdminDown" value="true" checked="@form.ExcludeAdminDown" /> <span>Auto-exclude administratively down ports</span></label>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Require alias</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseRequireAlias" value="true" checked="@form.UseRequireAlias" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @(effective.RequireAlias.Value ? "yes" : "no") @Phrase(effective.RequireAlias)</p>
+        }
+        <label class="check"><input type="checkbox" name="@(prefix).RequireAlias" value="true" checked="@form.RequireAlias" /> <span>Only monitor ports with an ifAlias</span></label>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>Unmonitor down</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseUnmonitorDown" value="true" checked="@form.UseUnmonitorDown" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @(effective.UnmonitorDown.Value ? "yes" : "no") @Phrase(effective.UnmonitorDown)</p>
+        }
+        <label class="check"><input type="checkbox" name="@(prefix).UnmonitorDown" value="true" checked="@form.UnmonitorDown" /> <span>Unmonitor all down / admin-down</span></label>
+    </div>
+
+    <div class="policy-field" data-policy-field>
+        <div class="policy-field-head">
+            <span>HA change alert</span>
+            @if (Model.AllowInherit)
+            {
+                <label class="check"><input data-override type="checkbox" name="@(prefix).UseAlertOnHaChange" value="true" checked="@form.UseAlertOnHaChange" /> <span>Override</span></label>
+            }
+        </div>
+        @if (Model.AllowInherit)
+        {
+            <p class="inherit-note">Inherited @(effective.AlertOnHaChange.Value ? "yes" : "no") @Phrase(effective.AlertOnHaChange)</p>
+        }
+        <label class="check"><input type="checkbox" name="@(prefix).AlertOnHaChange" value="true" checked="@form.AlertOnHaChange" /> <span>Alert when HA state changes</span></label>
+    </div>
+</div>

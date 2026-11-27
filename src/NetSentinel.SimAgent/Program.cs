@@ -29,7 +29,7 @@ for (var i = 0; i < args.Length; i++)
         case "--help":
         case "-h":
             Console.WriteLine("NetSentinel SNMP simulator");
-            Console.WriteLine("  default             five devices on UDP 1161, 1163, 1164, 1165, and 1166");
+            Console.WriteLine("  default             seven devices on UDP 1161 and 1163-1168");
             Console.WriteLine("  --single            one device, on --port or 1161");
             Console.WriteLine("  --port <udp>        implies --single");
             Console.WriteLine("  --trap <udp>        trap destination (default 1162)");

@@ -11,12 +11,13 @@
 }
 <header class="top">
     <div>
-        <p class="eyebrow"><a href="/">Devices</a> / @TextFormat.Version(device.Version)</p>
+        <p class="eyebrow"><a href="/">Devices</a> / @TextFormat.Version(Model.Effective.Version.Value)</p>
         <h1>
             <span class="lamp @TextFormat.Lamp(device)"></span>
             @device.Name
+            <span class="ha-badge @Model.Ha.CssClass" title="@(string.IsNullOrEmpty(Model.Ha.Peer) ? "HA" : "Peer " + Model.Ha.Peer)">@Model.Ha.Label</span>
         </h1>
-        <p class="lede mono">@device.Host:@device.Port · @TextFormat.Reachability(device)</p>
+        <p class="lede mono">@device.Host:@Model.Effective.Port.Value · @TextFormat.Reachability(device)</p>
     </div>
     <a class="btn" href="/devices/edit/@device.Id">Edit</a>
 </header>
@@ -41,6 +42,14 @@
     <div>
         <span>Last poll</span>
         <strong class="mono">@TextFormat.When(device.LastPollAt)</strong>
+    </div>
+    <div>
+        <span>HA</span>
+        <strong><span class="ha-badge @Model.Ha.CssClass" title="@(string.IsNullOrEmpty(Model.Ha.Peer) ? "" : "Peer " + Model.Ha.Peer)">@Model.Ha.Label</span></strong>
+    </div>
+    <div class="wide">
+        <span>Effective policy</span>
+        <strong>@TextFormat.Version(Model.Effective.Version.Value) @PolicyStore.Phrase(Model.Effective.Version) · port @Model.Effective.Port.Value @PolicyStore.Phrase(Model.Effective.Port) · every @Model.Effective.PollIntervalSeconds.Value s · timeout @Model.Effective.TimeoutMs.Value ms · @Model.Effective.Retries.Value retries · HA alerts @(Model.Effective.AlertOnHaChange.Value ? "on" : "off") @PolicyStore.Phrase(Model.Effective.AlertOnHaChange)</strong>
     </div>
     <div class="wide">
         <span>sysDescr</span>
@@ -74,7 +83,7 @@
 <section class="panel" id="interface-filters">
     <div class="panel-head">
         <h2>Interface filters</h2>
-        <p class="hint">New ports follow these rules. A manual checkbox on a row wins until you clear overrides.</p>
+        <p class="hint">Effective filters @PolicyStore.Phrase(Model.Effective.IfExcludePattern). A manual checkbox on a row still wins. Uncheck Override to inherit that field.</p>
     </div>
     @if (!string.IsNullOrEmpty(Model.FilterError))
     {
@@ -86,38 +95,52 @@
         <input type="hidden" name="iface" value="@Model.SelectedInterface" />
         <input type="hidden" name="custom" value="@Model.SelectedCustom" />
         <label class="span-2">
-            Include patterns
+            <span class="policy-field-head"><span>Include patterns</span><label class="check"><input type="checkbox" name="useInclude" value="true" checked="@Model.StoredPolicy.IfIncludePattern is not null" /> <span>Override</span></label></span>
             <textarea asp-for="Policy.IncludePattern" maxlength="500" placeholder="*uplink*"></textarea>
-            <span class="hint">Empty includes every port that is not excluded. Separate alternatives with a semicolon.</span>
+            <span class="hint">Empty includes every port that is not excluded. Inherited @PolicyStore.Phrase(Model.Effective.IfIncludePattern).</span>
         </label>
         <label class="span-2">
-            Exclude patterns
+            <span class="policy-field-head"><span>Exclude patterns</span><label class="check"><input type="checkbox" name="useExclude" value="true" checked="@Model.StoredPolicy.IfExcludePattern is not null" /> <span>Override</span></label></span>
             <textarea asp-for="Policy.ExcludePattern" maxlength="500" placeholder="Gi1/0/*"></textarea>
-            <span class="hint">Example glob <span class="mono">Gi1/0/*</span> or regex <span class="mono">^Gi1/0/\d+$</span>. Exclude wins when both match.</span>
+            <span class="hint">Exclude wins when both match. Inherited @PolicyStore.Phrase(Model.Effective.IfExcludePattern).</span>
         </label>
         <label>
-            Syntax
+            <span class="policy-field-head"><span>Syntax</span><label class="check"><input type="checkbox" name="useSyntax" value="true" checked="@Model.StoredPolicy.IfPatternSyntax is not null" /> <span>Override</span></label></span>
             <select asp-for="Policy.Syntax">
                 <option value="glob">Glob</option>
                 <option value="regex">Regular expression</option>
             </select>
         </label>
         <div>
-            <span>Match fields</span>
+            <span class="policy-field-head"><span>Match fields</span><label class="check"><input type="checkbox" name="useMatch" value="true" checked="@Model.StoredPolicy.IfMatchFields is not null" /> <span>Override</span></label></span>
             <div class="checks">
                 <label class="check"><input asp-for="Policy.MatchName" /> <span>ifName</span></label>
                 <label class="check"><input asp-for="Policy.MatchDescr" /> <span>ifDescr</span></label>
                 <label class="check"><input asp-for="Policy.MatchAlias" /> <span>ifAlias</span></label>
             </div>
         </div>
-        <label class="check">
-            <input asp-for="Policy.ExcludeAdminDown" />
-            <span>Auto-exclude administratively down ports</span>
-        </label>
-        <label class="check">
-            <input asp-for="Policy.RequireAlias" />
-            <span>Only monitor ports with an ifAlias (description)</span>
-        </label>
+        <div>
+            <label class="check"><input type="checkbox" name="useAdmin" value="true" checked="@Model.StoredPolicy.ExcludeAdminDown is not null" /> <span>Override</span></label>
+            <label class="check">
+                <input asp-for="Policy.ExcludeAdminDown" />
+                <span>Auto-exclude administratively down ports</span>
+            </label>
+        </div>
+        <div>
+            <label class="check"><input type="checkbox" name="useAlias" value="true" checked="@Model.StoredPolicy.RequireAlias is not null" /> <span>Override</span></label>
+            <label class="check">
+                <input asp-for="Policy.RequireAlias" />
+                <span>Only monitor ports with an ifAlias (description)</span>
+            </label>
+        </div>
+        <div>
+            <label class="check"><input type="checkbox" name="useUnmonitor" value="true" checked="@Model.StoredPolicy.UnmonitorDown is not null" /> <span>Override</span></label>
+            <label class="check">
+                <input type="checkbox" name="unmonitorDown" value="true" checked="@Model.Effective.UnmonitorDown.Value" />
+                <span>Unmonitor all down / admin-down</span>
+            </label>
+            <span class="hint">Standing policy. A manual checkbox still wins. Inherited @PolicyStore.Phrase(Model.Effective.UnmonitorDown).</span>
+        </div>
         <div class="span-2 actions">
             <button class="btn primary" type="submit">Save filters</button>
         </div>

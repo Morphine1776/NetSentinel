@@ -34,7 +34,11 @@ public sealed record CsvDeviceRow(
     string? IfPattern = null,
     string? IfExcludeAdminDown = null,
     string? IfRequireAlias = null,
-    string? IfMatch = null);
+    string? IfMatch = null,
+    string? TimeoutMs = null,
+    string? Retries = null,
+    string? UnmonitorDown = null,
+    string? AlertOnHa = null);
 
 public sealed record CsvPreviewRow(
     int Line,
@@ -66,16 +70,17 @@ public static class CsvDevices
     public const int MaxCharacters = 512 * 1024;
 
     public const string Template =
-        "name,host,version,community,v3_user,v3_auth_protocol,v3_auth_password,v3_priv_protocol,v3_priv_password,poll_interval,port,group,location,tags,parent,if_include,if_exclude,if_pattern,if_match,if_exclude_admin_down,if_require_alias\r\n" +
-        "Core switch,10.0.0.1,v2c,public,,,,,60,161,campus,MDF,\"core,edge\",,*uplink*,Gi1/0/*,glob,\"name,descr,alias\",yes,no\r\n" +
-        "Access switch,10.0.0.2,v2c,public,,,,,120,161,campus,IDF,access,Core switch,,,,glob,\"name,descr,alias\",yes,yes\r\n" +
-        "Border router,10.0.0.3,v3,,monitor,SHA256,auth-pass,AES,priv-pass,60,161,edge,MPOE,wan,,,,,,\r\n";
+        "name,host,version,community,v3_user,v3_auth_protocol,v3_auth_password,v3_priv_protocol,v3_priv_password,poll_interval,port,group,location,tags,parent,if_include,if_exclude,if_pattern,if_match,if_exclude_admin_down,if_require_alias,timeout_ms,retries,unmonitor_down,alert_on_ha\r\n" +
+        "Core switch,10.0.0.1,v2c,public,,,,,60,161,campus,MDF,\"core,edge\",,*uplink*,Gi1/0/*,glob,\"name,descr,alias\",yes,no,2000,1,no,yes\r\n" +
+        "Access switch,10.0.0.2,,,,,,,,,,campus,IDF,access,Core switch,,,,,,,,,,\r\n" +
+        "Border router,10.0.0.3,v3,,monitor,SHA256,auth-pass,AES,priv-pass,60,161,edge,MPOE,wan,,,,,,,,,,,,\r\n";
 
     private static readonly string[] HeaderOrder =
     {
         "name", "host", "version", "community", "v3_user", "v3_auth_protocol", "v3_auth_password",
         "v3_priv_protocol", "v3_priv_password", "poll_interval", "port", "group", "location", "tags", "parent",
-        "if_include", "if_exclude", "if_pattern", "if_match", "if_exclude_admin_down", "if_require_alias"
+        "if_include", "if_exclude", "if_pattern", "if_match", "if_exclude_admin_down", "if_require_alias",
+        "timeout_ms", "retries", "unmonitor_down", "alert_on_ha"
     };
 
     private static readonly Dictionary<string, string> HeaderAliases = BuildAliases();
@@ -127,7 +132,8 @@ public static class CsvDevices
                 row.Name, row.Host, row.Version, row.Community, row.V3User, row.V3AuthProtocol, row.V3AuthPassword,
                 row.V3PrivProtocol, row.V3PrivPassword, row.PollInterval, row.Port, row.Group, row.Location, row.Tags, row.Parent,
                 row.IfInclude ?? "", row.IfExclude ?? "", row.IfPattern ?? "", row.IfMatch ?? "",
-                row.IfExcludeAdminDown ?? "", row.IfRequireAlias ?? ""
+                row.IfExcludeAdminDown ?? "", row.IfRequireAlias ?? "",
+                row.TimeoutMs ?? "", row.Retries ?? "", row.UnmonitorDown ?? "", row.AlertOnHa ?? ""
             };
             builder.Append(string.Join(',', cells.Select(Escape)));
             builder.Append("\r\n");
@@ -204,7 +210,11 @@ public static class CsvDevices
                 Optional("if_pattern"),
                 Optional("if_exclude_admin_down"),
                 Optional("if_require_alias"),
-                Optional("if_match")));
+                Optional("if_match"),
+                Optional("timeout_ms"),
+                Optional("retries"),
+                Optional("unmonitor_down"),
+                Optional("alert_on_ha")));
         }
 
         return rows;
@@ -388,8 +398,8 @@ public static class CsvDevices
             item.Row.Line,
             item.Row.Name,
             item.Row.Host,
-            string.IsNullOrWhiteSpace(item.Row.Version) ? "v2c" : item.Row.Version,
-            string.IsNullOrWhiteSpace(item.Row.Port) ? "161" : item.Row.Port,
+            string.IsNullOrWhiteSpace(item.Row.Version) ? "inherit" : item.Row.Version,
+            string.IsNullOrWhiteSpace(item.Row.Port) ? "inherit" : item.Row.Port,
             item.Row.Group,
             item.Row.Location,
             item.Row.Tags,
@@ -489,14 +499,36 @@ public static class CsvDevices
             errors.Add("if_match must list name, descr, alias, or a combination of those.");
         }
 
-        if (row.IfExcludeAdminDown is not null && !TryParseFlag(row.IfExcludeAdminDown, out _))
+        if (row.IfExcludeAdminDown is not null && !string.IsNullOrWhiteSpace(row.IfExcludeAdminDown) && !TryParseFlag(row.IfExcludeAdminDown, out _))
         {
             errors.Add("if_exclude_admin_down must be yes or no.");
         }
 
-        if (row.IfRequireAlias is not null && !TryParseFlag(row.IfRequireAlias, out _))
+        if (row.IfRequireAlias is not null && !string.IsNullOrWhiteSpace(row.IfRequireAlias) && !TryParseFlag(row.IfRequireAlias, out _))
         {
             errors.Add("if_require_alias must be yes or no.");
+        }
+
+        if (row.TimeoutMs is not null && !string.IsNullOrWhiteSpace(row.TimeoutMs)
+            && (!int.TryParse(row.TimeoutMs, NumberStyles.None, CultureInfo.InvariantCulture, out var timeout) || timeout is < 200 or > 30000))
+        {
+            errors.Add("timeout_ms must be between 200 and 30000, or blank to inherit.");
+        }
+
+        if (row.Retries is not null && !string.IsNullOrWhiteSpace(row.Retries)
+            && (!int.TryParse(row.Retries, NumberStyles.None, CultureInfo.InvariantCulture, out var retries) || retries is < 0 or > 5))
+        {
+            errors.Add("retries must be between 0 and 5, or blank to inherit.");
+        }
+
+        if (row.UnmonitorDown is not null && !string.IsNullOrWhiteSpace(row.UnmonitorDown) && !TryParseFlag(row.UnmonitorDown, out _))
+        {
+            errors.Add("unmonitor_down must be yes or no.");
+        }
+
+        if (row.AlertOnHa is not null && !string.IsNullOrWhiteSpace(row.AlertOnHa) && !TryParseFlag(row.AlertOnHa, out _))
+        {
+            errors.Add("alert_on_ha must be yes or no.");
         }
 
         if (row.IfInclude is null && row.IfExclude is null)
@@ -521,38 +553,40 @@ public static class CsvDevices
 
     private static void ValidateSecrets(CsvDeviceRow row, SnmpVersion version, List<string> errors)
     {
-        if (version is SnmpVersion.V1 or SnmpVersion.V2C)
+        if (!string.IsNullOrWhiteSpace(row.Community) && row.Community.Length > 128)
         {
-            if (string.IsNullOrWhiteSpace(row.Community) || row.Community.Length > 128)
-            {
-                errors.Add("A community string is required for SNMP v1 and v2c.");
-            }
+            errors.Add("Community must be 128 characters or fewer.");
+        }
 
+        if (string.IsNullOrWhiteSpace(row.Version) || version is SnmpVersion.V1 or SnmpVersion.V2C)
+        {
             return;
         }
 
-        var auth = string.IsNullOrWhiteSpace(row.V3AuthProtocol) ? "None" : row.V3AuthProtocol.Trim();
-        var priv = string.IsNullOrWhiteSpace(row.V3PrivProtocol) ? "None" : row.V3PrivProtocol.Trim();
-        if (string.IsNullOrWhiteSpace(row.V3User) || row.V3User.Length > 64)
+        var auth = string.IsNullOrWhiteSpace(row.V3AuthProtocol) ? "" : row.V3AuthProtocol.Trim();
+        var priv = string.IsNullOrWhiteSpace(row.V3PrivProtocol) ? "" : row.V3PrivProtocol.Trim();
+        if (!string.IsNullOrWhiteSpace(row.V3User) && row.V3User.Length > 64)
         {
-            errors.Add("An SNMPv3 user name is required.");
+            errors.Add("An SNMPv3 user name must be 64 characters or fewer.");
         }
 
-        if (!IsAuth(auth)) errors.Add($"Authentication protocol '{auth}' is not supported.");
-        if (!IsPriv(priv)) errors.Add($"Privacy protocol '{priv}' is not supported.");
-        if (!auth.Equals("None", StringComparison.OrdinalIgnoreCase) && row.V3AuthPassword.Length < 8)
+        if (auth.Length > 0 && !IsAuth(auth)) errors.Add($"Authentication protocol '{auth}' is not supported.");
+        if (priv.Length > 0 && !IsPriv(priv)) errors.Add($"Privacy protocol '{priv}' is not supported.");
+        var authNamed = auth.Length > 0 && !auth.Equals("None", StringComparison.OrdinalIgnoreCase);
+        var privNamed = priv.Length > 0 && !priv.Equals("None", StringComparison.OrdinalIgnoreCase);
+        if (authNamed && !string.IsNullOrEmpty(row.V3AuthPassword) && row.V3AuthPassword.Length < 8)
         {
             errors.Add("SNMPv3 authentication passwords must be at least 8 characters.");
         }
 
-        if (!priv.Equals("None", StringComparison.OrdinalIgnoreCase))
+        if (privNamed)
         {
             if (auth.Equals("None", StringComparison.OrdinalIgnoreCase))
             {
                 errors.Add("Privacy requires authentication.");
             }
 
-            if (row.V3PrivPassword.Length < 8)
+            if (!string.IsNullOrEmpty(row.V3PrivPassword) && row.V3PrivPassword.Length < 8)
             {
                 errors.Add("SNMPv3 privacy passwords must be at least 8 characters.");
             }
@@ -641,6 +675,10 @@ public static class CsvDevices
         Add("if_match", "if_match_fields", "interface_fields");
         Add("if_exclude_admin_down", "exclude_admin_down", "skip_admin_down");
         Add("if_require_alias", "require_alias", "require_description", "only_described");
+        Add("timeout_ms", "timeout", "snmp_timeout");
+        Add("retries", "retry", "snmp_retries");
+        Add("unmonitor_down", "unmonitor_down_ports", "if_unmonitor_down");
+        Add("alert_on_ha", "ha_alert", "alert_ha_change");
         return map;
     }
 

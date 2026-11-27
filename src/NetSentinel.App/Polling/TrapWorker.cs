@@ -167,14 +167,19 @@ public sealed class TrapWorker : BackgroundService
         using var scope = _scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var registry = new UserRegistry();
-        var devices = await db.Devices.AsNoTracking()
-            .Where(device => device.Version == Core.SnmpVersion.V3 && device.V3User != "")
-            .ToListAsync(cancellationToken);
+        var devices = await db.Devices.AsNoTracking().ToListAsync(cancellationToken);
+        var catalog = await PolicyStore.LoadAsync(db, cancellationToken);
         foreach (var device in devices)
         {
+            var effective = catalog.Resolve(device);
+            if (effective.Version.Value != Core.SnmpVersion.V3 || string.IsNullOrWhiteSpace(effective.V3User.Value))
+            {
+                continue;
+            }
+
             try
             {
-                registry.Add(new Lextm.SharpSnmpLib.OctetString(device.V3User), SnmpPrivacy.Create(device.V3AuthProtocol, device.V3AuthPassword, device.V3PrivProtocol, device.V3PrivPassword));
+                registry.Add(new Lextm.SharpSnmpLib.OctetString(effective.V3User.Value), SnmpPrivacy.Create(effective.V3AuthProtocol.Value, effective.V3AuthSecret.Value, effective.V3PrivProtocol.Value, effective.V3PrivSecret.Value));
             }
             catch (Exception ex)
             {

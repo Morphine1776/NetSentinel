@@ -7,16 +7,18 @@ public sealed class Device
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string Host { get; set; } = "";
-    public int Port { get; set; } = 161;
-    public SnmpVersion Version { get; set; } = SnmpVersion.V2C;
-    public string Community { get; set; } = "public";
-    public string V3User { get; set; } = "";
+    public int? Port { get; set; }
+    public SnmpVersion? Version { get; set; }
+    public string? Community { get; set; }
+    public string? V3User { get; set; }
     public string V3Context { get; set; } = "";
-    public string V3AuthProtocol { get; set; } = "None";
-    public string V3AuthPassword { get; set; } = "";
-    public string V3PrivProtocol { get; set; } = "None";
-    public string V3PrivPassword { get; set; } = "";
-    public int PollIntervalSeconds { get; set; } = 60;
+    public string? V3AuthProtocol { get; set; }
+    public string? V3AuthPassword { get; set; }
+    public string? V3PrivProtocol { get; set; }
+    public string? V3PrivPassword { get; set; }
+    public int? PollIntervalSeconds { get; set; }
+    public int? TimeoutMs { get; set; }
+    public int? Retries { get; set; }
     public bool Enabled { get; set; } = true;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
@@ -37,12 +39,18 @@ public sealed class Device
     public int? ParentDeviceId { get; set; }
     public double? MapX { get; set; }
     public double? MapY { get; set; }
-    public string IfIncludePattern { get; set; } = "";
-    public string IfExcludePattern { get; set; } = "";
-    public string IfPatternSyntax { get; set; } = "glob";
-    public string IfMatchFields { get; set; } = "name,descr,alias";
-    public bool IfExcludeAdminDown { get; set; }
-    public bool IfRequireAlias { get; set; }
+    public string? IfIncludePattern { get; set; }
+    public string? IfExcludePattern { get; set; }
+    public string? IfPatternSyntax { get; set; }
+    public string? IfMatchFields { get; set; }
+    public bool? IfExcludeAdminDown { get; set; }
+    public bool? IfRequireAlias { get; set; }
+    public bool? UnmonitorDown { get; set; }
+    public bool? AlertOnHaChange { get; set; }
+    public string? HaState { get; set; }
+    public string? HaPeerState { get; set; }
+    public string? HaVendor { get; set; }
+    public DateTime? HaCheckedAt { get; set; }
 
     public List<CustomOid> CustomOids { get; set; } = new();
 }
@@ -180,6 +188,33 @@ public sealed class AlertRule
     public double Threshold { get; set; }
     public AlertSeverity Severity { get; set; } = AlertSeverity.Warning;
     public bool Enabled { get; set; } = true;
+}
+
+public sealed class MonitorPolicy
+{
+    public int Id { get; set; }
+    public string Scope { get; set; } = "global";
+    public string LocationKey { get; set; } = "";
+    public string DisplayName { get; set; } = "Global";
+    public int? SnmpVersion { get; set; }
+    public string? Community { get; set; }
+    public string? V3User { get; set; }
+    public string? V3AuthProtocol { get; set; }
+    public string? V3AuthSecret { get; set; }
+    public string? V3PrivProtocol { get; set; }
+    public string? V3PrivSecret { get; set; }
+    public int? Port { get; set; }
+    public int? PollIntervalSeconds { get; set; }
+    public int? TimeoutMs { get; set; }
+    public int? Retries { get; set; }
+    public string? IfIncludePattern { get; set; }
+    public string? IfExcludePattern { get; set; }
+    public string? IfPatternSyntax { get; set; }
+    public string? IfMatchFields { get; set; }
+    public bool? IfExcludeAdminDown { get; set; }
+    public bool? IfRequireAlias { get; set; }
+    public bool? UnmonitorDown { get; set; }
+    public bool? AlertOnHaChange { get; set; }
 }
 
 public sealed class AppSetting

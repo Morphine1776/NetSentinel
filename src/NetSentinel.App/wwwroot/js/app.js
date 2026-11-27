@@ -99,6 +99,7 @@
         '<input data-field="Name" placeholder="Name" maxlength="80" />' +
         '<input data-field="Oid" placeholder="1.3.6.1.4.1…" class="mono" maxlength="200" />' +
         '<input data-field="Unit" placeholder="Unit" maxlength="16" />' +
+        '<span class="oid-kind" data-kind=""></span>' +
         '<button class="btn ghost remove-oid" type="button">Remove</button>';
       oidList.appendChild(row);
     });

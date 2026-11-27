@@ -168,6 +168,12 @@ public static class ApiEndpoints
             });
         });
 
+        api.MapPost("/devices/walk", async (WalkDraft draft, WalkService walks, CancellationToken cancellationToken) =>
+            await walks.WalkDraftAsync(draft, cancellationToken));
+
+        api.MapPost("/devices/{id:int}/walk", async (int id, WalkQuery query, WalkService walks, CancellationToken cancellationToken) =>
+            await walks.WalkDeviceAsync(id, query, cancellationToken));
+
         api.MapGet("/devices/{id:int}/interface-policy", async (int id, AppDbContext db) =>
         {
             var device = await db.Devices.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id);

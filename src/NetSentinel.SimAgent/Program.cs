@@ -66,6 +66,7 @@ foreach (var agent in agents)
 }
 
 Console.WriteLine("  LLDP      core Gi0/0 — dist, core Gi0/1 — access");
+Console.WriteLine("  sensors   Inlet Temp, Exhaust Temp, and hrProcessorLoad on core and the active firewall");
 Console.WriteLine($"  trap      coldStart from {agents[0].SysName} to 127.0.0.1:{trapPort}");
 Console.WriteLine("Ctrl+C to stop.");
 

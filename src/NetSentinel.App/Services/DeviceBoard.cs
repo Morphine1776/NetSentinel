@@ -23,7 +23,10 @@ public sealed record DeviceBoardRow(
     string Ping,
     string LastPoll,
     string LastError,
-    bool Down);
+    bool Down,
+    string HaLabel,
+    string HaClass,
+    string HaPeer);
 
 public sealed record DeviceBoardGroup(
     string Key,
@@ -55,6 +58,7 @@ public static class DeviceBoardBuilder
     public static async Task<DeviceBoard> LoadAsync(AppDbContext db, CancellationToken cancellationToken = default)
     {
         var devices = await db.Devices.AsNoTracking().ToListAsync(cancellationToken);
+        var catalog = await PolicyStore.LoadAsync(db, cancellationToken);
         var critical = await db.Alerts.AsNoTracking()
             .Where(alert => alert.DeviceId != null
                 && alert.State != AlertState.Resolved
@@ -62,10 +66,10 @@ public static class DeviceBoardBuilder
             .Select(alert => alert.DeviceId!.Value)
             .Distinct()
             .ToListAsync(cancellationToken);
-        return Build(devices, critical.ToHashSet());
+        return Build(devices, critical.ToHashSet(), catalog);
     }
 
-    public static DeviceBoard Build(IReadOnlyList<Device> devices, IReadOnlySet<int> criticalDeviceIds)
+    public static DeviceBoard Build(IReadOnlyList<Device> devices, IReadOnlySet<int> criticalDeviceIds, PolicyCatalog? catalog = null)
     {
         ArgumentNullException.ThrowIfNull(devices);
         ArgumentNullException.ThrowIfNull(criticalDeviceIds);
@@ -102,7 +106,7 @@ public static class DeviceBoardBuilder
         var byId = devices.ToDictionary(device => device.Id);
         var groups = LocationGroups.Group(inputs).Select(group =>
         {
-            var rows = group.DeviceIds.Select(id => Row(byId[id])).ToList();
+            var rows = group.DeviceIds.Select(id => Row(byId[id], catalog)).ToList();
             return new DeviceBoardGroup(
                 group.Key,
                 group.Name,
@@ -121,21 +125,31 @@ public static class DeviceBoardBuilder
 
     public static string ToJson(DeviceBoard board) => JsonSerializer.Serialize(board, JsonOptions);
 
-    private static DeviceBoardRow Row(Device device) => new(
-        device.Id,
-        device.Name,
-        device.Host,
-        device.Port,
-        (device.Location ?? "").Trim(),
-        TextFormat.Version(device.Version),
-        device.PollIntervalSeconds,
-        TextFormat.Reachability(device),
-        TextFormat.Lamp(device),
-        device.LastSysName ?? "—",
-        TextFormat.Uptime(device.LastSysUpTimeTicks),
-        TextFormat.Ms(device.LastResponseMs),
-        TextFormat.Ping(device.LastPingOk),
-        TextFormat.When(device.LastPollAt),
-        device.LastError ?? "",
-        TextFormat.Reachability(device) == "Down");
+    private static DeviceBoardRow Row(Device device, PolicyCatalog? catalog)
+    {
+        var resolved = catalog?.Resolve(device);
+        var ha = HaStatus.FromStored(device.HaState, device.HaPeerState, device.HaVendor, device.LastSnmpOk == true);
+        var label = string.IsNullOrWhiteSpace(ha.Label) ? "N/A" : ha.Label;
+        var peer = string.IsNullOrWhiteSpace(ha.Peer) ? "" : "Peer " + ha.Peer;
+        return new DeviceBoardRow(
+            device.Id,
+            device.Name,
+            device.Host,
+            resolved?.Port.Value ?? device.Port ?? 161,
+            (device.Location ?? "").Trim(),
+            TextFormat.Version(resolved?.Version.Value ?? device.Version ?? SnmpVersion.V2C),
+            resolved?.PollIntervalSeconds.Value ?? device.PollIntervalSeconds ?? 60,
+            TextFormat.Reachability(device),
+            TextFormat.Lamp(device),
+            device.LastSysName ?? "—",
+            TextFormat.Uptime(device.LastSysUpTimeTicks),
+            TextFormat.Ms(device.LastResponseMs),
+            TextFormat.Ping(device.LastPingOk),
+            TextFormat.When(device.LastPollAt),
+            device.LastError ?? "",
+            TextFormat.Reachability(device) == "Down",
+            label,
+            string.IsNullOrWhiteSpace(ha.CssClass) ? "ha-na" : ha.CssClass,
+            peer);
+    }
 }

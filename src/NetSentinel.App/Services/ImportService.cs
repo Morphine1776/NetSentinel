@@ -40,15 +40,15 @@ public sealed class ImportService
             0,
             device.Name,
             device.Host,
-            TextFormat.Version(device.Version),
-            device.Community,
-            device.V3User,
-            device.V3AuthProtocol,
-            device.V3AuthPassword,
-            device.V3PrivProtocol,
-            device.V3PrivPassword,
-            device.PollIntervalSeconds.ToString(CultureInfo.InvariantCulture),
-            device.Port.ToString(CultureInfo.InvariantCulture),
+            device.Version is SnmpVersion version ? TextFormat.Version(version) : "",
+            device.Community ?? "",
+            device.V3User ?? "",
+            device.V3AuthProtocol ?? "",
+            device.V3AuthPassword is null ? "" : "set",
+            device.V3PrivProtocol ?? "",
+            device.V3PrivPassword is null ? "" : "set",
+            device.PollIntervalSeconds?.ToString(CultureInfo.InvariantCulture) ?? "",
+            device.Port?.ToString(CultureInfo.InvariantCulture) ?? "",
             device.GroupName,
             device.Location,
             device.Tags,
@@ -56,9 +56,13 @@ public sealed class ImportService
             device.IfIncludePattern,
             device.IfExcludePattern,
             device.IfPatternSyntax,
-            Flag(device.IfExcludeAdminDown),
-            Flag(device.IfRequireAlias),
-            device.IfMatchFields));
+            device.IfExcludeAdminDown is bool excludeAdmin ? Flag(excludeAdmin) : "",
+            device.IfRequireAlias is bool requireAlias ? Flag(requireAlias) : "",
+            device.IfMatchFields,
+            device.TimeoutMs?.ToString(CultureInfo.InvariantCulture),
+            device.Retries?.ToString(CultureInfo.InvariantCulture),
+            device.UnmonitorDown is bool unmonitor ? Flag(unmonitor) : "",
+            device.AlertOnHaChange is bool alertHa ? Flag(alertHa) : ""));
         return CsvDevices.Export(rows);
     }
 
@@ -125,6 +129,7 @@ public sealed class ImportService
             device.ParentDeviceId = parent.Id;
         }
 
+        await PolicyStore.EnsureLocationsAsync(_db, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         foreach (var (_, device) in touched)
         {
@@ -139,14 +144,13 @@ public sealed class ImportService
 
     private static void Apply(Device device, CsvDeviceRow row, bool keepSecrets)
     {
-        CsvDevices.TryParseVersion(row.Version, out var version);
-        var port = string.IsNullOrWhiteSpace(row.Port) ? 161 : int.Parse(row.Port, CultureInfo.InvariantCulture);
-        var interval = string.IsNullOrWhiteSpace(row.PollInterval) ? 60 : int.Parse(row.PollInterval, CultureInfo.InvariantCulture);
         device.Name = row.Name.Trim();
         device.Host = row.Host.Trim();
-        device.Port = port;
-        device.Version = version;
-        device.PollIntervalSeconds = interval;
+        device.Port = BlankInt(row.Port);
+        device.Version = string.IsNullOrWhiteSpace(row.Version) ? null : CsvDevices.TryParseVersion(row.Version, out var version) ? version : device.Version;
+        device.PollIntervalSeconds = BlankInt(row.PollInterval);
+        device.TimeoutMs = OptionalInt(row.TimeoutMs, device.TimeoutMs);
+        device.Retries = OptionalInt(row.Retries, device.Retries);
         device.GroupName = row.Group.Trim();
         device.Location = row.Location.Trim();
         device.Tags = CsvDevices.NormalizeTags(row.Tags);
@@ -154,59 +158,95 @@ public sealed class ImportService
         device.Enabled = true;
         device.UpdatedAt = DateTime.UtcNow;
         device.NextPollAt = DateTime.UtcNow;
-        if (!string.IsNullOrWhiteSpace(row.Community) || !keepSecrets)
+        device.Community = string.IsNullOrWhiteSpace(row.Community) ? null : row.Community.Trim();
+        device.V3User = string.IsNullOrWhiteSpace(row.V3User) ? null : row.V3User.Trim();
+        device.V3AuthProtocol = string.IsNullOrWhiteSpace(row.V3AuthProtocol) ? null : row.V3AuthProtocol.Trim();
+        device.V3PrivProtocol = string.IsNullOrWhiteSpace(row.V3PrivProtocol) ? null : row.V3PrivProtocol.Trim();
+        device.V3AuthPassword = SecretCell(row.V3AuthPassword, device.V3AuthPassword, keepSecrets);
+        device.V3PrivPassword = SecretCell(row.V3PrivPassword, device.V3PrivPassword, keepSecrets);
+        device.UnmonitorDown = OptionalFlag(row.UnmonitorDown, device.UnmonitorDown);
+        device.AlertOnHaChange = OptionalFlag(row.AlertOnHa, device.AlertOnHaChange);
+    }
+
+    private static int? BlankInt(string? text)
+        => string.IsNullOrWhiteSpace(text) ? null : int.Parse(text, CultureInfo.InvariantCulture);
+
+    private static int? OptionalInt(string? text, int? current)
+    {
+        if (text is null)
         {
-            device.Community = string.IsNullOrWhiteSpace(row.Community) ? "public" : row.Community.Trim();
+            return current;
         }
 
-        if (!string.IsNullOrWhiteSpace(row.V3User) || !keepSecrets)
+        return string.IsNullOrWhiteSpace(text) ? null : int.Parse(text, CultureInfo.InvariantCulture);
+    }
+
+    private static bool? OptionalFlag(string? text, bool? current)
+    {
+        if (text is null)
         {
-            device.V3User = row.V3User.Trim();
+            return current;
         }
 
-        device.V3AuthProtocol = string.IsNullOrWhiteSpace(row.V3AuthProtocol) ? (keepSecrets ? device.V3AuthProtocol : "None") : row.V3AuthProtocol.Trim();
-        device.V3PrivProtocol = string.IsNullOrWhiteSpace(row.V3PrivProtocol) ? (keepSecrets ? device.V3PrivProtocol : "None") : row.V3PrivProtocol.Trim();
-        if (!string.IsNullOrEmpty(row.V3AuthPassword) || !keepSecrets)
+        if (string.IsNullOrWhiteSpace(text))
         {
-            device.V3AuthPassword = row.V3AuthPassword;
+            return null;
         }
 
-        if (!string.IsNullOrEmpty(row.V3PrivPassword) || !keepSecrets)
+        return CsvDevices.TryParseFlag(text, out var value) ? value : current;
+    }
+
+    private static string? SecretCell(string posted, string? current, bool keepSecrets)
+    {
+        if (string.IsNullOrEmpty(posted))
         {
-            device.V3PrivPassword = row.V3PrivPassword;
+            return null;
         }
+
+        if (posted.Equals("set", StringComparison.OrdinalIgnoreCase) || posted.Equals("keep", StringComparison.OrdinalIgnoreCase))
+        {
+            return keepSecrets ? current : null;
+        }
+
+        return posted;
     }
 
     private static void ApplyInterfacePolicy(Device device, CsvDeviceRow row)
     {
         if (row.IfInclude is not null)
         {
-            device.IfIncludePattern = row.IfInclude.Trim();
+            device.IfIncludePattern = string.IsNullOrWhiteSpace(row.IfInclude) ? null : row.IfInclude.Trim();
         }
 
         if (row.IfExclude is not null)
         {
-            device.IfExcludePattern = row.IfExclude.Trim();
+            device.IfExcludePattern = string.IsNullOrWhiteSpace(row.IfExclude) ? null : row.IfExclude.Trim();
         }
 
         if (row.IfPattern is not null)
         {
-            device.IfPatternSyntax = string.IsNullOrWhiteSpace(row.IfPattern) ? "glob" : row.IfPattern.Trim().ToLowerInvariant();
+            device.IfPatternSyntax = string.IsNullOrWhiteSpace(row.IfPattern) ? null : row.IfPattern.Trim().ToLowerInvariant();
         }
 
-        if (row.IfMatch is not null && InterfaceMonitor.TryParseFields(row.IfMatch, out var name, out var descr, out var alias))
+        if (row.IfMatch is not null)
         {
-            device.IfMatchFields = InterfaceMonitor.FormatFields(name, descr, alias);
+            device.IfMatchFields = string.IsNullOrWhiteSpace(row.IfMatch) || !InterfaceMonitor.TryParseFields(row.IfMatch, out var name, out var descr, out var alias)
+                ? null
+                : InterfaceMonitor.FormatFields(name, descr, alias);
         }
 
-        if (row.IfExcludeAdminDown is not null && CsvDevices.TryParseFlag(row.IfExcludeAdminDown, out var excludeAdminDown))
+        if (row.IfExcludeAdminDown is not null)
         {
-            device.IfExcludeAdminDown = excludeAdminDown;
+            device.IfExcludeAdminDown = string.IsNullOrWhiteSpace(row.IfExcludeAdminDown) || !CsvDevices.TryParseFlag(row.IfExcludeAdminDown, out var excludeAdminDown)
+                ? null
+                : excludeAdminDown;
         }
 
-        if (row.IfRequireAlias is not null && CsvDevices.TryParseFlag(row.IfRequireAlias, out var requireAlias))
+        if (row.IfRequireAlias is not null)
         {
-            device.IfRequireAlias = requireAlias;
+            device.IfRequireAlias = string.IsNullOrWhiteSpace(row.IfRequireAlias) || !CsvDevices.TryParseFlag(row.IfRequireAlias, out var requireAlias)
+                ? null
+                : requireAlias;
         }
     }
 
@@ -219,9 +259,14 @@ public sealed class ImportService
 
     private async Task<List<ExistingDeviceRef>> LoadExistingAsync(CancellationToken cancellationToken)
     {
-        return await _db.Devices.AsNoTracking()
-            .Select(device => new ExistingDeviceRef(device.Id, device.Name, device.Host, device.Port, device.ParentDeviceId))
-            .ToListAsync(cancellationToken);
+        var devices = await _db.Devices.AsNoTracking().ToListAsync(cancellationToken);
+        var catalog = await PolicyStore.LoadAsync(_db, cancellationToken);
+        return devices.Select(device => new ExistingDeviceRef(
+            device.Id,
+            device.Name,
+            device.Host,
+            catalog.Resolve(device).Port.Value,
+            device.ParentDeviceId)).ToList();
     }
 }
 
@@ -247,7 +292,7 @@ public sealed class MapService
             id = device.Id,
             name = device.Name,
             host = device.Host,
-            port = device.Port,
+            port = device.Port ?? 161,
             group = device.GroupName,
             location = device.Location,
             tags = device.Tags,

@@ -37,34 +37,12 @@ public sealed class InterfaceMonitorService
         _db = db;
     }
 
-    public static InterfaceMonitorRules RulesFor(Device device)
+    public static InterfaceMonitorRules RulesFor(Device device, PolicyCatalog catalog)
+        => catalog.Resolve(device).InterfaceRules();
+
+    public static InterfacePolicyInput ReadInput(ResolvedPolicy policy)
     {
-        if (!InterfaceMonitor.TrySyntax(device.IfPatternSyntax, out var syntax))
-        {
-            syntax = InterfacePatternSyntax.Glob;
-        }
-
-        if (!InterfaceMonitor.TryParseFields(device.IfMatchFields, out var name, out var descr, out var alias))
-        {
-            name = true;
-            descr = true;
-            alias = true;
-        }
-
-        return new InterfaceMonitorRules(
-            device.IfIncludePattern ?? "",
-            device.IfExcludePattern ?? "",
-            syntax,
-            name,
-            descr,
-            alias,
-            device.IfExcludeAdminDown,
-            device.IfRequireAlias);
-    }
-
-    public static InterfacePolicyInput ReadInput(Device device)
-    {
-        var rules = RulesFor(device);
+        var rules = policy.InterfaceRules();
         return new InterfacePolicyInput
         {
             IncludePattern = rules.IncludePattern,
@@ -78,9 +56,9 @@ public sealed class InterfaceMonitorService
         };
     }
 
-    public static object PolicyJson(Device device)
+    public static object PolicyJson(ResolvedPolicy policy)
     {
-        var input = ReadInput(device);
+        var input = ReadInput(policy);
         return new
         {
             includePattern = input.IncludePattern,
@@ -111,7 +89,7 @@ public sealed class InterfaceMonitorService
         Write(device, rules!);
         device.UpdatedAt = DateTime.UtcNow;
         var states = await _db.InterfaceStates.Where(state => state.DeviceId == deviceId).ToListAsync(cancellationToken);
-        Apply(device, states);
+        await ApplyAsync(device, states, cancellationToken);
         await ResolveQuietAsync(deviceId, states, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         return null;
@@ -126,7 +104,7 @@ public sealed class InterfaceMonitorService
         }
 
         var states = await _db.InterfaceStates.Where(state => state.DeviceId == deviceId).ToListAsync(cancellationToken);
-        Apply(device, states);
+        await ApplyAsync(device, states, cancellationToken);
         await ResolveQuietAsync(deviceId, states, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
     }
@@ -149,7 +127,7 @@ public sealed class InterfaceMonitorService
             state.MonitorOverride = update.Monitored;
         }
 
-        Apply(device, new[] { state });
+        await ApplyAsync(device, new[] { state }, cancellationToken);
         await ResolveQuietAsync(deviceId, new[] { state }, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         return (true, null);
@@ -205,15 +183,20 @@ public sealed class InterfaceMonitorService
                 return "Action must be only-selected, unmonitor-down, or clear-overrides.";
         }
 
-        Apply(device, states);
+        await ApplyAsync(device, states, cancellationToken);
         await ResolveQuietAsync(deviceId, states, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
         return null;
     }
 
-    public static void Apply(Device device, IEnumerable<InterfaceState> states)
+    public async Task ApplyAsync(Device device, IEnumerable<InterfaceState> states, CancellationToken cancellationToken = default)
     {
-        var rules = RulesFor(device);
+        var catalog = await PolicyStore.LoadAsync(_db, cancellationToken);
+        Apply(RulesFor(device, catalog), states);
+    }
+
+    public static void Apply(InterfaceMonitorRules rules, IEnumerable<InterfaceState> states)
+    {
         foreach (var state in states)
         {
             state.Monitored = InterfaceMonitor.Evaluate(Identity(state), rules, state.MonitorOverride);
@@ -221,7 +204,7 @@ public sealed class InterfaceMonitorService
     }
 
     public static InterfaceIdentity Identity(InterfaceState state)
-        => new(state.IfName ?? "", state.IfDescr ?? "", state.IfAlias ?? "", state.AdminStatus);
+        => new(state.IfName ?? "", state.IfDescr ?? "", state.IfAlias ?? "", state.AdminStatus, state.OperStatus);
 
     public static bool IsDown(InterfaceState state)
         => state.AdminStatus == InterfaceMonitor.AdminDown || state.OperStatus is 2 or 7;

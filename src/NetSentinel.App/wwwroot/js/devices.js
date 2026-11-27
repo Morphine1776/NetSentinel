@@ -207,7 +207,12 @@
       copy(group),
       chevron()
     );
-    article.appendChild(button);
+    const head = el("div", "bubble-head");
+    const policy = el("a", "btn tiny policy-link", "Policy");
+    policy.href = "/policies?location=" + encodeURIComponent(key.length ? key : "unassigned");
+    policy.addEventListener("click", function (event) { event.stopPropagation(); });
+    head.append(button, policy);
+    article.appendChild(head);
 
     if (open) {
       const panel = el("div", "bubble-panel");
@@ -253,11 +258,12 @@
 
   function renderTable(devices) {
     const wrap = el("div", "table-wrap");
-    const table = el("table", "responsive");
+    const table = el("table", "device-rows");
     const head = document.createElement("thead");
     const headRow = document.createElement("tr");
-    ["Status", "Device", "SNMP", "sysName", "Uptime", "Response", "Ping", "Last poll"].forEach(function (label) {
-      headRow.appendChild(el("th", null, label));
+    ["Status", "HA", "Device", "SNMP", "sysName", "Uptime", "Response", "Ping", "Last poll"].forEach(function (label, index) {
+      const cls = index === 0 ? "stick" : index === 1 ? "stick-ha" : null;
+      headRow.appendChild(el("th", cls, label));
     });
     head.appendChild(headRow);
     table.appendChild(head);
@@ -267,6 +273,7 @@
       const row = document.createElement("tr");
       row.append(
         statusCell(device),
+        haCell(device),
         deviceCell(device),
         textCell("SNMP", device.version, true),
         textCell("sysName", device.sysName, false),
@@ -282,9 +289,21 @@
     return wrap;
   }
 
+  function haCell(device) {
+    const cell = document.createElement("td");
+    cell.dataset.label = "HA";
+    cell.className = "stick-ha";
+    const label = (device.haLabel || "").trim() || "N/A";
+    const badge = el("span", "ha-badge " + (device.haClass || "ha-na"), label);
+    badge.title = device.haPeer ? device.haPeer : "HA " + label;
+    cell.appendChild(badge);
+    return cell;
+  }
+
   function statusCell(device) {
     const cell = document.createElement("td");
     cell.dataset.label = "Status";
+    cell.className = "stick";
     const status = el("span", "status");
     status.append(el("span", "lamp " + (device.lamp || "off")), document.createTextNode(device.status || ""));
     cell.appendChild(status);

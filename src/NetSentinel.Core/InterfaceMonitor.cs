@@ -8,7 +8,7 @@ public enum InterfacePatternSyntax
     Regex
 }
 
-public sealed record InterfaceIdentity(string Name, string Descr, string Alias, int AdminStatus);
+public sealed record InterfaceIdentity(string Name, string Descr, string Alias, int AdminStatus, int OperStatus = 0);
 
 public sealed record InterfaceMonitorRules(
     string IncludePattern,
@@ -18,7 +18,8 @@ public sealed record InterfaceMonitorRules(
     bool MatchDescr,
     bool MatchAlias,
     bool ExcludeAdminDown,
-    bool RequireAlias)
+    bool RequireAlias,
+    bool UnmonitorDown = false)
 {
     public static InterfaceMonitorRules MonitorAll { get; } = new("", "", InterfacePatternSyntax.Glob, true, true, true, false, false);
 }
@@ -34,7 +35,12 @@ public enum InterfaceTrapEffect
 public static class InterfaceMonitor
 {
     public const int AdminDown = 2;
+    public const int OperDown = 2;
+    public const int OperLowerLayerDown = 7;
     public const int MaxPatternLength = 500;
+
+    public static bool IsDown(InterfaceIdentity iface)
+        => iface.AdminStatus == AdminDown || iface.OperStatus is OperDown or OperLowerLayerDown;
 
     public static bool Evaluate(InterfaceIdentity iface, InterfaceMonitorRules rules, bool? manualOverride)
     {
@@ -43,6 +49,11 @@ public static class InterfaceMonitor
         if (manualOverride is bool forced)
         {
             return forced;
+        }
+
+        if (rules.UnmonitorDown && IsDown(iface))
+        {
+            return false;
         }
 
         return FollowsRules(iface, rules);

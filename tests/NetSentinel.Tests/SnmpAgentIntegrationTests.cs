@@ -107,6 +107,12 @@ public class SnmpAgentIntegrationTests
         Assert.Contains(devices, device => !device.Answers && device.Location == "Closet");
         Assert.Contains(devices, device => device.Answers && device.Location == "MDF");
         Assert.Contains(devices, device => device.Answers && device.Location == "IDF-2");
+        Assert.Equal("active", SimCatalog.FirewallActive.HaState);
+        Assert.Equal("passive", SimCatalog.FirewallPassive.HaState);
+        Assert.Equal("passive", SimCatalog.FirewallActive.HaPeerState);
+        Assert.Equal(SimCatalog.FirewallActive.Location, SimCatalog.FirewallPassive.Location);
+        Assert.Contains(SimCatalog.DefaultAgents, item => item.Device == SimCatalog.FirewallActive);
+        Assert.All(devices.Where(device => device.SysName is not ("sim-fw-01" or "sim-fw-02")), device => Assert.Null(device.HaState));
     }
 
     [Fact]

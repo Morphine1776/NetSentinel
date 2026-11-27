@@ -50,6 +50,13 @@ public static class TextFormat
 
     public static string Percent(double? value) => value is null ? "—" : $"{value.Value:0.0}%";
 
+    public static string VersionToken(SnmpVersion version) => version switch
+    {
+        SnmpVersion.V1 => "V1",
+        SnmpVersion.V3 => "V3",
+        _ => "V2C"
+    };
+
     public static string Version(SnmpVersion version) => version switch
     {
         SnmpVersion.V1 => "v1",
@@ -145,6 +152,7 @@ public static class TextFormat
         AlertKind.InterfaceDown => "interface down",
         AlertKind.InterfaceUp => "interface up",
         AlertKind.Threshold => "threshold",
+        AlertKind.HaChange => "ha change",
         _ => kind.ToString()
     };
 }

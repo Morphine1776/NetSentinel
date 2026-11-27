@@ -375,6 +375,12 @@ public sealed class SimSnmpAgent : IDisposable
             Add("1.3.6.1.4.1.99999.1.0", () => new Gauge32(Temperature()));
         }
 
+        if (!string.IsNullOrWhiteSpace(_device.HaState))
+        {
+            Add("1.3.6.1.4.1.25461.2.1.2.1.11.0", () => new OctetString(_device.HaState));
+            Add("1.3.6.1.4.1.25461.2.1.2.1.12.0", () => new OctetString(_device.HaPeerState ?? ""));
+        }
+
         var interfaces = _device.Ports.Select(port => new SimInterface(
             port.Index,
             port.Name,

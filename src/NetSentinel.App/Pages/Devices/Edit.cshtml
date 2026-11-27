@@ -19,8 +19,17 @@
         }
     </div>
 }
+@if (Model.Warnings.Count > 0)
+{
+    <div class="banner warn" role="status">
+        @foreach (var warning in Model.Warnings)
+        {
+            <div>@warning</div>
+        }
+    </div>
+}
 
-<form method="post" class="stack" id="device-form">
+<form method="post" class="stack" id="device-form" autocomplete="off">
     <section class="panel form-grid">
         <label>
             Name
@@ -29,22 +38,6 @@
         <label>
             Host or IP
             <input asp-for="Input.Host" required maxlength="255" placeholder="10.0.0.1" />
-        </label>
-        <label>
-            SNMP port
-            <input asp-for="Input.Port" type="number" min="1" max="65535" />
-        </label>
-        <label>
-            Poll interval (seconds)
-            <input asp-for="Input.PollIntervalSeconds" type="number" min="5" max="86400" />
-        </label>
-        <label>
-            Version
-            <select asp-for="Input.Version" id="snmp-version">
-                <option value="V1">SNMP v1</option>
-                <option value="V2C">SNMP v2c</option>
-                <option value="V3">SNMP v3</option>
-            </select>
         </label>
         <label>
             Group
@@ -72,50 +65,28 @@
             <input asp-for="Input.Enabled" />
             <span>Polling enabled</span>
         </label>
-        <label class="v2-field">
-            Community
-            <input asp-for="Input.Community" maxlength="128" autocomplete="off" />
+        <label>
+            Context name
+            <input asp-for="Input.V3Context" maxlength="64" />
+            <span class="hint">Context stays on the device. It is not inherited.</span>
         </label>
-        <div class="v3-field span-2">
-            <div class="form-grid">
-                <label>
-                    v3 user
-                    <input asp-for="Input.V3User" maxlength="64" autocomplete="off" />
-                </label>
-                <label>
-                    Context name
-                    <input asp-for="Input.V3Context" maxlength="64" />
-                </label>
-                <label>
-                    Auth protocol
-                    <select asp-for="Input.V3AuthProtocol">
-                        <option>None</option>
-                        <option>MD5</option>
-                        <option>SHA1</option>
-                        <option>SHA256</option>
-                        <option>SHA384</option>
-                        <option>SHA512</option>
-                    </select>
-                </label>
-                <label>
-                    Auth password
-                    <input asp-for="Input.V3AuthPassword" type="password" autocomplete="new-password" placeholder="@(Model.IsNew ? "" : "Leave blank to keep")" />
-                </label>
-                <label>
-                    Privacy protocol
-                    <select asp-for="Input.V3PrivProtocol">
-                        <option>None</option>
-                        <option>DES</option>
-                        <option>AES</option>
-                        <option>AES192</option>
-                        <option>AES256</option>
-                    </select>
-                </label>
-                <label>
-                    Privacy password
-                    <input asp-for="Input.V3PrivPassword" type="password" autocomplete="new-password" placeholder="@(Model.IsNew ? "" : "Leave blank to keep")" />
-                </label>
-            </div>
+    </section>
+
+    <section class="panel" id="policy">
+        <div class="panel-head">
+            <h2>Policy</h2>
+            <p class="hint">Unchecked fields inherit and stay inherited when you save, even if the box shows that value. Check Override only for a value you want to pin on this device. Secrets are write-only.</p>
+        </div>
+        <partial name="_PolicyFields" model="Model.Editor" />
+        <div class="actions">
+            @if (Model.IsNew)
+            {
+                <button class="btn" type="button" id="reset-all-inherited">Reset all to inherited</button>
+            }
+            else
+            {
+                <button class="btn" type="submit" form="reset-policy">Reset all to inherited</button>
+            }
         </div>
     </section>
 
@@ -147,6 +118,7 @@
 
 @if (!Model.IsNew)
 {
+    <form id="reset-policy" method="post" asp-page-handler="ResetPolicy" asp-route-id="@Model.Input.Id" onsubmit="return confirm('Clear every policy override on this device?');"></form>
     <form method="post" asp-page-handler="Delete" asp-route-id="@Model.Input.Id" class="danger-zone" onsubmit="return confirm('Remove this device and its stored samples?');">
         <div>
             <strong>Remove device</strong>
@@ -154,4 +126,8 @@
         </div>
         <button class="btn danger" type="submit">Delete</button>
     </form>
+}
+
+@section Scripts {
+    <script src="~/js/policy.js"></script>
 }

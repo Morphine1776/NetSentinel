@@ -50,7 +50,7 @@
               cell(row.host),
               cell(row.group),
               cell(row.parent),
-              cell((row.errors || []).join(" ") || (row.duplicateMatch ? "Matches an existing device by " + row.duplicateMatch + "." : ""))
+              cell((row.errors || []).join(" ") || row.warning || (row.duplicateMatch ? "Matches an existing device by " + row.duplicateMatch + "." : ""))
             );
             rows.appendChild(tr);
           });

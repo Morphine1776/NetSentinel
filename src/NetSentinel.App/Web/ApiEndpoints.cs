@@ -16,11 +16,115 @@ public static class ApiEndpoints
         api.MapGet("/devices", async (AppDbContext db) =>
         {
             var devices = await db.Devices.AsNoTracking().OrderBy(device => device.Name).ToListAsync();
-            return Results.Json(devices.Select(Summary));
+            return Results.Json(devices.Select(device => Summary(device)));
         });
 
         api.MapGet("/devices/board", async (AppDbContext db, CancellationToken cancellationToken) =>
             Results.Json(await DeviceBoardBuilder.LoadAsync(db, cancellationToken)));
+
+        api.MapGet("/devices/{id:int}/effective-settings", async (int id, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var device = await db.Devices.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id, cancellationToken);
+            if (device is null)
+            {
+                return Results.NotFound();
+            }
+
+            var catalog = await PolicyStore.LoadAsync(db, cancellationToken);
+            var resolved = catalog.Resolve(device);
+            return Results.Json(new
+            {
+                device.Id,
+                location = catalog.LocationName(device),
+                ha = HaJson(device),
+                settings = PolicyStore.LayerJson(PolicyStore.FromDevice(device), resolved)
+            });
+        });
+
+        api.MapGet("/policies/global", async (AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var catalog = await PolicyStore.LoadAsync(db, cancellationToken);
+            var stored = catalog.Global;
+            var resolved = PolicyResolver.Resolve(stored, null, null, "Global");
+            return Results.Json(PolicyStore.LayerJson(stored, resolved));
+        });
+
+        api.MapPut("/policies/global", async (PolicyForm form, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var row = await db.Policies.FirstOrDefaultAsync(policy => policy.Scope == "global", cancellationToken);
+            if (row is null)
+            {
+                return Results.NotFound();
+            }
+
+            var written = PolicyStore.ApplyForm(PolicyStore.FromPolicy(row), form, inheritAllowed: false);
+            var resolved = PolicyResolver.Resolve(written, null, null, "Global");
+            var errors = PolicyStore.Validate(resolved, written, requireConcrete: true);
+            if (errors.Count > 0)
+            {
+                return Results.BadRequest(new { errors });
+            }
+
+            PolicyStore.WritePolicy(row, written);
+            await db.SaveChangesAsync(cancellationToken);
+            return Results.Json(PolicyStore.LayerJson(written, resolved));
+        });
+
+        api.MapGet("/policies/locations", async (AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            await PolicyStore.EnsureLocationsAsync(db, cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+            var catalog = await PolicyStore.LoadAsync(db, cancellationToken);
+            return Results.Json(catalog.Locations.Select(location => new
+            {
+                key = location.Key,
+                name = location.Display,
+                settings = PolicyStore.LayerJson(location.Values, PolicyResolver.Resolve(catalog.Global, location.Values, null, location.Display))
+            }));
+        });
+
+        api.MapGet("/policies/locations/{key}", async (string key, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var catalog = await PolicyStore.LoadAsync(db, cancellationToken);
+            if (!catalog.TryLocation(Uri.UnescapeDataString(key), out var display, out var values))
+            {
+                return Results.NotFound();
+            }
+
+            return Results.Json(new
+            {
+                key = LocationGroups.KeyFor(string.Equals(key, "unassigned", StringComparison.OrdinalIgnoreCase) ? "" : display),
+                name = display,
+                settings = PolicyStore.LayerJson(values, PolicyResolver.Resolve(catalog.Global, values, null, display))
+            });
+        });
+
+        api.MapPut("/policies/locations/{key}", async (string key, PolicyForm form, AppDbContext db, CancellationToken cancellationToken) =>
+        {
+            var normalized = string.Equals(key, "unassigned", StringComparison.OrdinalIgnoreCase) ? "" : LocationGroups.KeyFor(Uri.UnescapeDataString(key));
+            var row = await db.Policies.FirstOrDefaultAsync(policy => policy.Scope == "location" && policy.LocationKey == normalized, cancellationToken);
+            if (row is null)
+            {
+                return Results.NotFound();
+            }
+
+            var written = PolicyStore.ApplyForm(PolicyStore.FromPolicy(row), form, inheritAllowed: true);
+            var resolved = PolicyResolver.Resolve((await PolicyStore.LoadAsync(db, cancellationToken)).Global, written, null, row.DisplayName);
+            var errors = PolicyStore.Validate(resolved, written, requireConcrete: false);
+            if (errors.Count > 0)
+            {
+                return Results.BadRequest(new { errors });
+            }
+
+            PolicyStore.WritePolicy(row, written);
+            await db.SaveChangesAsync(cancellationToken);
+            return Results.Json(new
+            {
+                key = row.LocationKey,
+                name = row.DisplayName,
+                settings = PolicyStore.LayerJson(written, resolved)
+            });
+        });
 
         api.MapGet("/devices/{id:int}", async (int id, bool? monitoredOnly, AppDbContext db) =>
         {
@@ -29,6 +133,8 @@ public static class ApiEndpoints
             {
                 return Results.NotFound();
             }
+
+            var catalog = await PolicyStore.LoadAsync(db);
 
             var interfaces = await db.InterfaceStates.AsNoTracking()
                 .Where(item => item.DeviceId == id && item.Present)
@@ -42,8 +148,10 @@ public static class ApiEndpoints
 
             return Results.Json(new
             {
-                device = Summary(device),
-                interfacePolicy = InterfaceMonitorService.PolicyJson(device),
+                device = Summary(device, catalog.Resolve(device)),
+                ha = HaJson(device),
+                effective = PolicyStore.LayerJson(PolicyStore.FromDevice(device), catalog.Resolve(device)),
+                interfacePolicy = InterfaceMonitorService.PolicyJson(catalog.Resolve(device)),
                 unmonitored,
                 interfaces = interfaces.Select(InterfaceJson),
                 customOids = device.CustomOids.Select(oid => new
@@ -63,7 +171,13 @@ public static class ApiEndpoints
         api.MapGet("/devices/{id:int}/interface-policy", async (int id, AppDbContext db) =>
         {
             var device = await db.Devices.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id);
-            return device is null ? Results.NotFound() : Results.Json(InterfaceMonitorService.PolicyJson(device));
+            if (device is null)
+            {
+                return Results.NotFound();
+            }
+
+            var catalog = await PolicyStore.LoadAsync(db);
+            return Results.Json(InterfaceMonitorService.PolicyJson(catalog.Resolve(device)));
         });
 
         api.MapPut("/devices/{id:int}/interface-policy", async (int id, InterfacePolicyInput input, InterfaceMonitorService monitor) =>
@@ -296,14 +410,20 @@ public static class ApiEndpoints
         });
     }
 
-    private static object Summary(Device device) => new
+    private static object HaJson(Device device)
+    {
+        var ha = HaStatus.FromStored(device.HaState, device.HaPeerState, device.HaVendor, device.LastSnmpOk == true);
+        return new { label = ha.Label, css = ha.CssClass, peer = ha.Peer, vendor = ha.Vendor, state = ha.Token };
+    }
+
+    private static object Summary(Device device, ResolvedPolicy? resolved = null) => new
     {
         device.Id,
         device.Name,
         device.Host,
-        device.Port,
-        version = TextFormat.Version(device.Version),
-        device.PollIntervalSeconds,
+        port = resolved?.Port.Value ?? device.Port ?? 161,
+        version = TextFormat.Version(resolved?.Version.Value ?? device.Version ?? SnmpVersion.V2C),
+        pollIntervalSeconds = resolved?.PollIntervalSeconds.Value ?? device.PollIntervalSeconds ?? 60,
         device.Enabled,
         device.LastPingOk,
         device.LastSnmpOk,

@@ -39,6 +39,7 @@ public sealed class DeviceSaveResult
 {
     public Device? Device { get; init; }
     public List<string> Errors { get; init; } = new();
+    public List<string> Warnings { get; init; } = new();
     public bool Ok => Errors.Count == 0;
 }
 
@@ -61,7 +62,10 @@ public sealed class DeviceAdminService
         _db = db;
     }
 
-    public async Task<DeviceSaveResult> SaveAsync(DeviceInput input, CancellationToken cancellationToken = default)
+    public Task<DeviceSaveResult> SaveAsync(DeviceInput input, CancellationToken cancellationToken = default)
+        => SaveAsync(input, null, cancellationToken);
+
+    public async Task<DeviceSaveResult> SaveAsync(DeviceInput input, PolicyForm? policy, CancellationToken cancellationToken = default)
     {
         var errors = new List<string>();
         input.Name = (input.Name ?? "").Trim();
@@ -140,65 +144,102 @@ public sealed class DeviceAdminService
             errors.Add("Host must be a hostname or IP address.");
         }
 
-        if (input.Port is < 1 or > 65535)
+        PolicyValues? written = null;
+        if (policy is null)
         {
-            errors.Add("SNMP port must be between 1 and 65535.");
-        }
-
-        if (input.PollIntervalSeconds is < 5 or > 86400)
-        {
-            errors.Add("Poll interval must be between 5 seconds and 24 hours.");
-        }
-
-        if (input.Version is SnmpVersion.V1 or SnmpVersion.V2C)
-        {
-            if (string.IsNullOrWhiteSpace(input.Community) || input.Community.Length > 128)
+            if (input.Port is < 1 or > 65535)
             {
-                errors.Add("A community string is required for SNMP v1 and v2c.");
+                errors.Add("SNMP port must be between 1 and 65535.");
+            }
+
+            if (input.PollIntervalSeconds is < 5 or > 86400)
+            {
+                errors.Add("Poll interval must be between 5 seconds and 24 hours.");
+            }
+
+            if (input.Version is SnmpVersion.V1 or SnmpVersion.V2C)
+            {
+                if (string.IsNullOrWhiteSpace(input.Community) || input.Community.Length > 128)
+                {
+                    errors.Add("A community string is required for SNMP v1 and v2c.");
+                }
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(input.V3User) || input.V3User.Length > 64)
+                {
+                    errors.Add("An SNMPv3 user name is required.");
+                }
+
+                if (!AuthProtocols.Contains(input.V3AuthProtocol))
+                {
+                    errors.Add("Authentication protocol is not supported.");
+                }
+
+                if (!PrivProtocols.Contains(input.V3PrivProtocol))
+                {
+                    errors.Add("Privacy protocol is not supported.");
+                }
+
+                if (!input.V3AuthProtocol.Equals("None", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(input.V3AuthPassword))
+                {
+                    errors.Add("An authentication password is required for the selected protocol.");
+                }
+                else if (!input.V3AuthProtocol.Equals("None", StringComparison.OrdinalIgnoreCase) && input.V3AuthPassword!.Length < 8)
+                {
+                    errors.Add("SNMPv3 authentication passwords must be at least 8 characters.");
+                }
+
+                if (!input.V3PrivProtocol.Equals("None", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (input.V3AuthProtocol.Equals("None", StringComparison.OrdinalIgnoreCase))
+                    {
+                        errors.Add("Privacy requires authentication.");
+                    }
+
+                    if (string.IsNullOrEmpty(input.V3PrivPassword))
+                    {
+                        errors.Add("A privacy password is required for the selected protocol.");
+                    }
+                    else if (input.V3PrivPassword.Length < 8)
+                    {
+                        errors.Add("SNMPv3 privacy passwords must be at least 8 characters.");
+                    }
+                }
             }
         }
         else
         {
-            if (string.IsNullOrWhiteSpace(input.V3User) || input.V3User.Length > 64)
+            var current = existing is null ? new PolicyValues() : PolicyStore.FromDevice(existing);
+            written = PolicyStore.ApplyForm(current, policy, inheritAllowed: true);
+            await PolicyStore.EnsureLocationAsync(_db, input.Location, cancellationToken);
+            var catalog = await PolicyStore.LoadAsync(_db, cancellationToken);
+            var parent = catalog.Resolve(new Device { Location = (input.Location ?? "").Trim() });
+            written = PolicyStore.DropMatches(written, parent);
+            var preview = new Device
             {
-                errors.Add("An SNMPv3 user name is required.");
-            }
-
-            if (!AuthProtocols.Contains(input.V3AuthProtocol))
-            {
-                errors.Add("Authentication protocol is not supported.");
-            }
-
-            if (!PrivProtocols.Contains(input.V3PrivProtocol))
-            {
-                errors.Add("Privacy protocol is not supported.");
-            }
-
-            if (!input.V3AuthProtocol.Equals("None", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(input.V3AuthPassword))
-            {
-                errors.Add("An authentication password is required for the selected protocol.");
-            }
-            else if (!input.V3AuthProtocol.Equals("None", StringComparison.OrdinalIgnoreCase) && input.V3AuthPassword!.Length < 8)
-            {
-                errors.Add("SNMPv3 authentication passwords must be at least 8 characters.");
-            }
-
-            if (!input.V3PrivProtocol.Equals("None", StringComparison.OrdinalIgnoreCase))
-            {
-                if (input.V3AuthProtocol.Equals("None", StringComparison.OrdinalIgnoreCase))
-                {
-                    errors.Add("Privacy requires authentication.");
-                }
-
-                if (string.IsNullOrEmpty(input.V3PrivPassword))
-                {
-                    errors.Add("A privacy password is required for the selected protocol.");
-                }
-                else if (input.V3PrivPassword.Length < 8)
-                {
-                    errors.Add("SNMPv3 privacy passwords must be at least 8 characters.");
-                }
-            }
+                Location = (input.Location ?? "").Trim(),
+                Version = written.Version,
+                Community = written.Community,
+                V3User = written.V3User,
+                V3AuthProtocol = written.V3AuthProtocol,
+                V3AuthPassword = written.V3AuthSecret,
+                V3PrivProtocol = written.V3PrivProtocol,
+                V3PrivPassword = written.V3PrivSecret,
+                Port = written.Port,
+                PollIntervalSeconds = written.PollIntervalSeconds,
+                TimeoutMs = written.TimeoutMs,
+                Retries = written.Retries,
+                IfIncludePattern = written.IfIncludePattern,
+                IfExcludePattern = written.IfExcludePattern,
+                IfPatternSyntax = written.IfPatternSyntax,
+                IfMatchFields = written.IfMatchFields,
+                IfExcludeAdminDown = written.ExcludeAdminDown,
+                IfRequireAlias = written.RequireAlias,
+                UnmonitorDown = written.UnmonitorDown,
+                AlertOnHaChange = written.AlertOnHaChange
+            };
+            errors.AddRange(PolicyStore.Validate(catalog.Resolve(preview), written, requireConcrete: false));
         }
 
         var oids = input.CustomOids
@@ -239,17 +280,24 @@ public sealed class DeviceAdminService
         var device = existing ?? new Device { CreatedAt = now };
         device.Name = input.Name;
         device.Host = input.Host;
-        device.Port = input.Port;
-        device.Version = input.Version;
-        device.Community = input.Community ?? "public";
-        device.V3User = input.V3User ?? "";
         device.V3Context = input.V3Context ?? "";
-        device.V3AuthProtocol = input.V3AuthProtocol;
-        device.V3AuthPassword = input.V3AuthPassword ?? "";
-        device.V3PrivProtocol = input.V3PrivProtocol;
-        device.V3PrivPassword = input.V3PrivPassword ?? "";
-        device.PollIntervalSeconds = input.PollIntervalSeconds;
         device.Enabled = input.Enabled;
+        if (written is null)
+        {
+            device.Port = input.Port;
+            device.Version = input.Version;
+            device.Community = input.Community ?? "public";
+            device.V3User = input.V3User ?? "";
+            device.V3AuthProtocol = input.V3AuthProtocol;
+            device.V3AuthPassword = input.V3AuthPassword ?? "";
+            device.V3PrivProtocol = input.V3PrivProtocol;
+            device.V3PrivPassword = input.V3PrivPassword ?? "";
+            device.PollIntervalSeconds = input.PollIntervalSeconds;
+        }
+        else
+        {
+            PolicyStore.WriteDevice(device, written);
+        }
         device.GroupName = (input.GroupName ?? "").Trim();
         device.Location = (input.Location ?? "").Trim();
         device.Tags = CsvDevices.NormalizeTags(input.Tags ?? "");
@@ -291,8 +339,18 @@ public sealed class DeviceAdminService
             }
         }
 
+        await PolicyStore.EnsureLocationAsync(_db, device.Location, cancellationToken);
         await _db.SaveChangesAsync(cancellationToken);
-        return new DeviceSaveResult { Device = device };
+        var warnings = await DuplicateWarningsAsync(device, cancellationToken);
+        if (written is not null)
+        {
+            var states = await _db.InterfaceStates.Where(state => state.DeviceId == device.Id).ToListAsync(cancellationToken);
+            var catalog = await PolicyStore.LoadAsync(_db, cancellationToken);
+            InterfaceMonitorService.Apply(catalog.Resolve(device).InterfaceRules(), states);
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        return new DeviceSaveResult { Device = device, Warnings = warnings };
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default)
@@ -314,6 +372,31 @@ public sealed class DeviceAdminService
         _db.Devices.Remove(device);
         await _db.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    private async Task<List<string>> DuplicateWarningsAsync(Device device, CancellationToken cancellationToken)
+    {
+        var catalog = await PolicyStore.LoadAsync(_db, cancellationToken);
+        var port = catalog.Resolve(device).Port.Value;
+        var host = device.Host.Trim();
+        var warnings = new List<string>();
+        var others = await _db.Devices.AsNoTracking().Where(item => item.Id != device.Id).ToListAsync(cancellationToken);
+        foreach (var other in others)
+        {
+            if (!string.Equals(other.Host.Trim(), host, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (catalog.Resolve(other).Port.Value != port)
+            {
+                continue;
+            }
+
+            warnings.Add($"{host}:{port} is already used by {other.Name}. This device was still saved.");
+        }
+
+        return warnings;
     }
 
     public static bool IsOid(string? text)

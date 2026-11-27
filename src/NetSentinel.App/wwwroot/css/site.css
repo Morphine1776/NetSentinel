@@ -151,7 +151,7 @@ aside nav a.active, aside nav a:hover {
 }
 .aside-foot { margin-top: auto; display: flex; flex-direction: column; gap: 0.6rem; }
 .who { color: var(--muted); font-size: 0.85rem; }
-main { padding: 1.5rem 1.75rem 3rem; max-width: 1180px; }
+main { padding: 1.5rem 1.75rem 3rem; min-width: 0; }
 
 .top, .panel-head, .actions, .row-actions {
   display: flex;
@@ -222,7 +222,7 @@ tbody tr[data-select-iface], tbody tr[data-select-custom] { cursor: pointer; }
 .lamp.down { background: var(--down); box-shadow: 0 0 0 4px rgba(255, 109, 87, 0.16); }
 .lamp.warn { background: var(--warn); box-shadow: 0 0 0 4px rgba(240, 193, 74, 0.16); }
 .lamp.off { background: #5c675c; }
-.status { display: inline-flex; align-items: center; gap: 0.55rem; }
+.status { display: inline-flex; align-items: center; gap: 0.55rem; white-space: nowrap; }
 
 .pill {
   display: inline-flex;
@@ -286,6 +286,7 @@ tbody tr[data-select-iface], tbody tr[data-select-custom] { cursor: pointer; }
   margin-bottom: 1rem;
 }
 .banner.bad { background: rgba(255, 109, 87, 0.1); color: #ffd0c8; }
+.banner.warn { background: rgba(240, 193, 74, 0.12); color: #ffe7b8; }
 
 label { display: flex; flex-direction: column; gap: 0.35rem; color: var(--muted); background: transparent; font-size: 0.85rem; }
 input,
@@ -448,6 +449,67 @@ tr.row-Ready td { background: rgba(182, 242, 92, 0.04); }
 .bubble.health-degraded { border-color: rgba(240, 193, 74, 0.86); }
 .bubble.health-critical { border-color: rgba(255, 109, 87, 0.9); }
 .bubble.health-waiting { border-color: rgba(147, 163, 148, 0.5); }
+.bubble-head { display: flex; align-items: stretch; }
+.bubble-head .bubble-toggle { flex: 1; min-width: 0; }
+.policy-link {
+  align-self: center;
+  margin-right: 0.85rem;
+  flex: none;
+  color: var(--text);
+  background-color: #141a13;
+  border: 1px solid var(--line);
+}
+.policy-link:hover { color: var(--text); background-color: var(--bg-hover); }
+.board table.device-rows {
+  width: max-content;
+  min-width: 100%;
+}
+.board table.device-rows th,
+.board table.device-rows td { vertical-align: middle; white-space: nowrap; }
+.board .table-wrap { overflow-x: auto; }
+.board table.device-rows th.stick,
+.board table.device-rows td.stick,
+.board table.device-rows th.stick-ha,
+.board table.device-rows td.stick-ha {
+  position: sticky;
+  z-index: 1;
+  background-color: var(--bg-elev);
+}
+.board table.device-rows th.stick,
+.board table.device-rows td.stick { left: 0; min-width: 6.5rem; }
+.board table.device-rows th.stick-ha,
+.board table.device-rows td.stick-ha { left: 6.5rem; }
+.board table.device-rows th.stick,
+.board table.device-rows th.stick-ha { z-index: 2; }
+.ha-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.ha-active { color: #d9ffb0; background-color: #1c3314; border-color: rgba(182, 242, 92, 0.45); }
+.ha-passive { color: #d5e8ff; background-color: #15283a; border-color: rgba(140, 186, 255, 0.45); }
+.ha-other { color: #ffe7b8; background-color: #3a2e14; border-color: rgba(240, 193, 74, 0.5); }
+.ha-na { color: #d5ddd0; background-color: #1a211a; border-color: rgba(147, 163, 148, 0.4); }
+.policy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
+.policy-field { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.policy-field-head { display: flex; justify-content: space-between; gap: 0.6rem; align-items: center; color: var(--muted); font-size: 0.85rem; }
+.policy-field .inherit-note { color: var(--muted); font-size: 0.8rem; }
+.policy-field.inheriting input:not([type="checkbox"]),
+.policy-field.inheriting select,
+.policy-field.inheriting textarea { opacity: 0.72; }
+.policy-field input,
+.policy-field select,
+.policy-field textarea { color: var(--text); background-color: #10160f; }
+@media (max-width: 860px) {
+  .policy-grid { grid-template-columns: 1fr; }
+}
 .bubble-toggle {
   width: 100%;
   display: flex;
@@ -494,7 +556,7 @@ tr.row-Ready td { background: rgba(182, 242, 92, 0.04); }
 .chevron { color: var(--muted); display: inline-grid; flex: none; transition: transform 0.15s ease; }
 .bubble.open .chevron { transform: rotate(180deg); }
 .bubble-panel { padding: 0 0.55rem 0.7rem; }
-.bubble-panel .table-wrap { box-shadow: none; }
+.bubble-panel .table-wrap { box-shadow: none; overflow-x: auto; }
 @media (prefers-reduced-motion: reduce) {
   .chevron { transition: none; }
 }

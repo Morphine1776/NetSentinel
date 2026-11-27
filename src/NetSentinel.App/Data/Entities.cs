@@ -51,6 +51,8 @@ public sealed class Device
     public string? HaPeerState { get; set; }
     public string? HaVendor { get; set; }
     public DateTime? HaCheckedAt { get; set; }
+    public string? HaPendingState { get; set; }
+    public int HaPendingCount { get; set; }
 
     public List<CustomOid> CustomOids { get; set; } = new();
 }

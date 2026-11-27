@@ -40,6 +40,8 @@ public sealed class AppDbContext : DbContext
             entity.Property(d => d.HaState).HasMaxLength(40);
             entity.Property(d => d.HaPeerState).HasMaxLength(80);
             entity.Property(d => d.HaVendor).HasMaxLength(32);
+            entity.Property(d => d.HaPendingState).HasMaxLength(40);
+            entity.Property(d => d.HaPendingCount).HasDefaultValue(0);
             entity.HasIndex(d => new { d.Enabled, d.NextPollAt });
             entity.HasMany(d => d.CustomOids)
                 .WithOne(o => o.Device)
@@ -175,6 +177,8 @@ public static class SchemaUpgrader
         await AddColumn(connection, columns, "HaPeerState", "ALTER TABLE Devices ADD COLUMN HaPeerState TEXT NULL", cancellationToken);
         await AddColumn(connection, columns, "HaVendor", "ALTER TABLE Devices ADD COLUMN HaVendor TEXT NULL", cancellationToken);
         await AddColumn(connection, columns, "HaCheckedAt", "ALTER TABLE Devices ADD COLUMN HaCheckedAt TEXT NULL", cancellationToken);
+        await AddColumn(connection, columns, "HaPendingState", "ALTER TABLE Devices ADD COLUMN HaPendingState TEXT NULL", cancellationToken);
+        await AddColumn(connection, columns, "HaPendingCount", "ALTER TABLE Devices ADD COLUMN HaPendingCount INTEGER NOT NULL DEFAULT 0", cancellationToken);
         await RelaxPolicyColumnsAsync(connection, cancellationToken);
 
         var interfaceColumns = await ReadColumnNames(connection, "InterfaceStates", cancellationToken);

@@ -288,17 +288,7 @@ public sealed class PollWorker : BackgroundService
             AlertTransition? haAlert = null;
             if (result.SnmpOk && result.HaRead)
             {
-                haAlert = HaAlerts.Change(
-                    $"device:{device.Id}",
-                    device.Name,
-                    device.HaCheckedAt is not null,
-                    device.HaState,
-                    result.HaState,
-                    effective.AlertOnHaChange.Value);
-                device.HaState = result.HaState;
-                device.HaPeerState = result.HaPeerState;
-                device.HaVendor = result.HaVendor;
-                device.HaCheckedAt = result.SampledAt;
+                haAlert = ApplyHaResult(device, result, effective.AlertOnHaChange.Value);
             }
 
             var rules = await db.Rules.AsNoTracking()
@@ -372,6 +362,41 @@ public sealed class PollWorker : BackgroundService
         {
             _logger.LogError(ex, "Poll failed for device {Id}", id);
         }
+    }
+
+    public static AlertTransition? ApplyHaResult(Device device, PollResult result, bool alertOnHaChange)
+    {
+        if (!result.SnmpOk || !result.HaRead)
+        {
+            return null;
+        }
+
+        var decision = HaAlerts.Observe(
+            $"device:{device.Id}",
+            device.Name,
+            new HaTrack(
+                device.HaCheckedAt is not null,
+                device.HaState,
+                device.HaPeerState,
+                device.HaVendor,
+                device.HaPendingState,
+                device.HaPendingCount),
+            result.HaState,
+            result.HaPeerState,
+            result.HaVendor,
+            alertOnHaChange,
+            result.HaProbeFailed);
+        device.HaState = decision.State;
+        device.HaPeerState = decision.Peer;
+        device.HaVendor = decision.Vendor;
+        device.HaPendingState = decision.PendingState;
+        device.HaPendingCount = decision.PendingCount;
+        if (!result.HaProbeFailed)
+        {
+            device.HaCheckedAt = result.SampledAt;
+        }
+
+        return decision.Alert;
     }
 
     private static async Task ReplaceDiscoveredLinksAsync(

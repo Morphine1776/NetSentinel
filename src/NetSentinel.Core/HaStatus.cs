@@ -10,6 +10,11 @@ public enum HaBadge
 
 public sealed record HaReading(HaBadge Badge, string Label, string? Token, string? Peer, string? Vendor)
 {
+    /// <summary>
+    /// True when no vendor answered. An answered value that canonicalizes to N/A is a real reading and stays false.
+    /// </summary>
+    public bool ProbeFailed { get; init; }
+
     public static HaReading Unavailable { get; } = new(HaBadge.Unavailable, "N/A", null, null, null);
 
     public string CssClass => Badge switch
@@ -69,14 +74,16 @@ public static class HaStatus
     {
         var palo = Vendors.First(vendor => vendor.Id == "paloalto");
         var cisco = Vendors.First(vendor => vendor.Id == "cisco-rf");
-        if (LooksLikePaloAlto(sysObjectId, sysDescr) && !LooksLikeCisco(sysObjectId, sysDescr))
+        var paloAlto = LooksLikePaloAlto(sysObjectId, sysDescr);
+        var ciscoDevice = LooksLikeCisco(sysObjectId, sysDescr);
+        if (paloAlto && !ciscoDevice)
         {
-            return new IHaVendor[] { palo, cisco };
+            return new IHaVendor[] { palo };
         }
 
-        if (LooksLikeCisco(sysObjectId, sysDescr) && !LooksLikePaloAlto(sysObjectId, sysDescr))
+        if (ciscoDevice && !paloAlto)
         {
-            return new IHaVendor[] { cisco, palo };
+            return new IHaVendor[] { cisco };
         }
 
         return Vendors;
@@ -99,7 +106,7 @@ public static class HaStatus
             return vendor.ToReading(interpreted.Raw, peerText);
         }
 
-        return HaReading.Unavailable;
+        return HaReading.Unavailable with { ProbeFailed = true };
     }
 
     public static HaReading FromStored(string? token, string? peer, string? vendor, bool snmpOk)
@@ -310,35 +317,103 @@ public sealed class CiscoRfHaVendor : IHaVendor
     }
 }
 
+public sealed record HaTrack(
+    bool HadReading,
+    string? State,
+    string? Peer,
+    string? Vendor,
+    string? PendingState,
+    int PendingCount);
+
+public sealed record HaDecision(
+    string? State,
+    string? Peer,
+    string? Vendor,
+    string? PendingState,
+    int PendingCount,
+    AlertTransition? Alert);
+
 public static class HaAlerts
 {
-    public static AlertTransition? Change(string scope, string deviceName, bool hadReading, string? previousToken, string? nextToken, bool enabled)
+    public static HaDecision Observe(
+        string scope,
+        string deviceName,
+        HaTrack current,
+        string? nextState,
+        string? nextPeer,
+        string? nextVendor,
+        bool alertsEnabled,
+        bool probeFailed)
     {
-        if (!enabled || !hadReading)
+        ArgumentNullException.ThrowIfNull(current);
+        if (probeFailed)
         {
-            return null;
+            return new HaDecision(
+                current.State,
+                current.Peer,
+                current.Vendor,
+                current.PendingCount > 0 ? current.PendingState : null,
+                current.PendingCount > 0 ? current.PendingCount : 0,
+                null);
         }
 
-        var previous = Norm(previousToken);
-        var next = Norm(nextToken);
-        if (string.Equals(previous, next, StringComparison.Ordinal))
+        var next = Norm(nextState);
+        if (!current.HadReading)
         {
-            return null;
+            return Store(next, nextPeer, nextVendor, null);
         }
 
-        var from = Display(previous);
-        var to = Display(next);
-        return new AlertTransition(
+        var previous = Norm(current.State);
+        if (previous == next)
+        {
+            return new HaDecision(
+                StoreToken(previous),
+                HaStatus.NormalizePeer(nextPeer),
+                PickVendor(nextVendor, current.Vendor),
+                null,
+                0,
+                null);
+        }
+
+        // A pending token of "" is a pending N/A. Count stays 1 until the same token is read again.
+        if (previous.Length == 0 || next.Length == 0)
+        {
+            var pending = current.PendingCount > 0 ? Norm(current.PendingState) : null;
+            if (pending is not null && pending == next)
+            {
+                return Store(next, nextPeer, nextVendor, alertsEnabled ? Build(scope, deviceName, previous, next) : null);
+            }
+
+            return new HaDecision(StoreToken(previous), Blank(current.Peer), Blank(current.Vendor), next, 1, null);
+        }
+
+        return Store(next, nextPeer, nextVendor, alertsEnabled ? Build(scope, deviceName, previous, next) : null);
+    }
+
+    private static HaDecision Store(string next, string? peer, string? vendor, AlertTransition? alert)
+        => new(StoreToken(next), HaStatus.NormalizePeer(peer), Blank(vendor), null, 0, alert);
+
+    private static string? StoreToken(string norm)
+        => norm.Length == 0 ? null : norm;
+
+    private static string? PickVendor(string? next, string? current)
+        => string.IsNullOrWhiteSpace(next) ? Blank(current) : next.Trim();
+
+    private static string? Blank(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static AlertTransition Build(string scope, string deviceName, string previous, string next)
+        => new(
             AlertTransitionType.Open,
             $"{scope}:ha:{previous}->{next}:{DateTime.UtcNow.Ticks}",
             AlertKind.HaChange,
             AlertSeverity.Info,
-            $"Device {deviceName} HA state changed from {from} to {to}.",
+            $"Device {deviceName} HA state changed from {Display(previous)} to {Display(next)}.",
             null,
             null);
-    }
 
-    private static string Norm(string? token) => string.IsNullOrWhiteSpace(token) ? "" : token.Trim().ToLowerInvariant();
+    private static string Norm(string? token)
+        => string.IsNullOrWhiteSpace(token) ? "" : token.Trim().ToLowerInvariant();
 
     private static string Display(string token)
         => token.Length == 0 ? "N/A" : token;

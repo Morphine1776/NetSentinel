@@ -149,7 +149,7 @@ Core's Gi0/0 advertises dist, and Gi0/1 advertises access. Both sides advertise 
 
 - **Devices.** Grouped by the location field into collapsible cards. Blank locations sit in Unassigned. Matching ignores case and surrounding spaces, so `MDF` and `mdf` are one group. Each card shows the location, the device count, and how many are up (for example `2/3 up`), plus a down count when something is down. The border is green when every device is reporting, amber when some are down, and red when every device is down or any device there has an open or acknowledged critical alert. A label and an icon repeat that state: All reporting, Some down, All down, Critical alert, or Waiting when nothing is down but not every device has reported (or one is paused). Critical and partial groups come first, then locations that are still waiting, then healthy ones, A–Z inside each band. Each card has a Policy link for that location. Expand all, collapse all, and which cards are open are remembered in this browser. Search matches name, IP, and location and opens the groups that hit. Down only hides devices that are up. Bubbles and a grouped list are both available, and the choice is remembered. Inside an expanded group, in both the bubble and list layouts, a narrow HA column sits immediately after Status. The pill is Active (green), Passive (blue), another state in amber with its text, or N/A in muted grey. A peer state, when the device reports one, is the tooltip. The device rows stay one compact line. On a wide screen the table uses the width of the page. On a narrow screen it scrolls sideways, and Status and HA stay pinned at the left. The list reloads from `GET /api/devices/board` about every 45 seconds without reloading the page. Add, edit, delete, import, and export are the same actions as before. Open a device for the interface table, the resolved policy, and charts. Ranges are 1 hour, 6 hours, 24 hours, and 7 days. Each interface row has a monitored checkbox. Select rows for "Monitor only selected", or unmonitor every down and admin-down port. "Clear manual overrides" lets the filters decide again. Unmonitored ports stay in the table only while "Show unmonitored" is on. They are still discovered, but polls do not keep bandwidth history for them and they do not raise interface or threshold alerts.
 - **Policies.** Global defaults, then one editor per location. Uncheck Override to inherit. Secrets show as set or inherited and are never sent back to the browser.
-- **Edit.** Name, host, location, and the policy fields. A new device inherits every policy field. The inherited value and its source (`from FMC`, `from Global`) are shown with Override off, and saving without checking Override stores inherit rather than a copy of that value. Check Override only for a value that should stay on this device. Each field has Reset, and Reset all to inherited clears every saved override. v3 secrets are write-only: leave the box blank to keep the stored secret. Adding a device whose IP and port are already used shows a warning and still saves. Custom OIDs are edited on the same form.
+- **Edit.** Name, host, location, and the policy fields. A new device inherits every policy field. The inherited value and its source (`from FMC`, `from Global`) are shown with Override off, and saving without checking Override stores inherit rather than a copy of that value. Check Override only for a value that should stay on this device. Each field has Reset, and Reset all to inherited clears every saved override. v3 secrets are write-only: leave the box blank to keep the stored secret. Adding a device whose IP and port are already used shows a warning and still saves. Custom OIDs are edited on the same form. Walk, on that form, discovers OIDs on the host and can fill a custom OID row.
 - **Alerts.** Open and acknowledged items, plus history. Ack and resolve are manual; a cleared condition resolves the matching alert on the next poll.
 - **Traps.** Newest first, with varbinds. v1 and v2c are stored as they arrive. v3 traps are decrypted when the username matches a configured device. Informs get a response so the sender does not retry.
 - **Settings.** Retention, failure threshold, trap listener, SMTP, and threshold rules. Policy lives on its own page.
@@ -170,10 +170,38 @@ Interface monitoring:
 | GET, PUT | `/api/policies/global` | Global policy. PUT sends the same fields as the form. A blank secret keeps the stored one. |
 | GET | `/api/policies/locations` | Every location policy. |
 | GET, PUT | `/api/policies/locations/{key}` | One location. `unassigned` is the empty location. Null or an unchecked override inherits from Global. |
+| POST | `/api/devices/{id}/walk` | `{ "baseOid": "1.3.6.1.2.1.99.1.1.1.4", "maxRows": 500 }` walks that device with its resolved SNMP settings. |
+| POST | `/api/devices/walk` | Walk a host that is not saved yet. Send `host`, `location`, optional `deviceId`, `baseOid`, `maxRows`, and the policy override flags from the form. |
 
 HA polling is vendor-specific. Palo Alto uses `panSysHAState` (`1.3.6.1.4.1.25461.2.1.2.1.11.0`, then the same OID without `.0`) and may also read `panSysHAPeerState` (`.12.0`) for the tooltip. Cisco redundancy framework uses `cRFStatusUnitState` (`1.3.6.1.4.1.9.9.176.1.1.2.0`). A missing OID is N/A, not an error, and does not fail the rest of the poll. `Unmonitor all down / admin-down` is also a standing policy: ports that are oper-down or admin-down stay unmonitored until a manual checkbox says otherwise.
 
 `GET /api/devices/{id}` includes every discovered interface, the policy, and `monitored` / `monitorOverride` on each row. `?monitoredOnly=true` drops the unmonitored rows. `GET /api/map?showUnmonitored=true` includes utilization for links whose local port is not monitored.
+
+## Walk
+
+On the device form, Custom OIDs has Walk. Pick a preset or type any numeric OID, then Walk. The request uses the host on the form and the resolved SNMP settings: a checked override, otherwise the location policy, otherwise global. v1 uses GETNEXT. v2c and v3 use GETBULK. The walk stops at the end of that subtree. It also stops at 500 rows (raise it up to 5000) or after 20 seconds, and the panel says when the result was cut short. Nothing in the response is a community or a v3 password.
+
+Each row shows the OID, a label when one can be resolved, the SNMP type, the value, and whether the value is numeric. Add copies that OID into a custom OID row with a suggested name and a type guess: gauge for Integer32, Gauge32, and numeric strings, counter for Counter32 and Counter64. Edit the row if you want, then save the device as usual. An OID that is already on the form is marked Added. Filter the table to find one sensor in a long walk.
+
+For sensor trees the label is the entity name (`entPhysicalName`) or, for Cisco ENVMON, the description column. The sensor type and scale are shown when the device has them (ENTITY-SENSOR-MIB columns `.1` and `.2`, and the Cisco entSensor equivalents). A missing name is skipped.
+
+Presets:
+
+| Preset | OID | What it is |
+| --- | --- | --- |
+| Palo Alto CPU (hrProcessorLoad) | `1.3.6.1.2.1.25.3.3.1.2` | `.1` management plane, `.2` data plane |
+| Palo Alto session utilization | `1.3.6.1.4.1.25461.2.1.2.3.1` | Session table utilization |
+| ENTITY-SENSOR-MIB values | `1.3.6.1.2.1.99.1.1.1.4` | Temperatures and other entity sensors |
+| Cisco CPU (cpmCPUTotal) | `1.3.6.1.4.1.9.9.109.1.1.1.1` | `.7` is 1-minute, `.8` is 5-minute |
+| Cisco ENVMON temperature | `1.3.6.1.4.1.9.9.13.1.3.1` | `.2` description, `.3` value |
+| Cisco entSensorValue | `1.3.6.1.4.1.9.9.91.1.1.1.1.4` | Type `.1` (8 is celsius), scale `.2` |
+| Cisco memory pool | `1.3.6.1.4.1.9.9.48.1.1.1` | Processor and I/O pool |
+| system | `1.3.6.1.2.1.1` | sysDescr, sysName, and the rest of system |
+| Full MIB-2 | `1.3.6.1.2.1` | Large. It will hit the row cap or the time limit |
+
+A custom OID you add this way is polled with the device. Under Settings, a threshold rule on that OID's value alerts on a temperature or a CPU percentage. A counter OID also gets a per-second rate, and a rule can use that rate instead.
+
+`sim-core-01` and `sim-fw-01` answer a small ENTITY-SENSOR subtree (Inlet Temp and Exhaust Temp, with `entPhysicalName`) and two `hrProcessorLoad` rows, so Walk can be tried against the simulator.
 
 ## Windows Service
 

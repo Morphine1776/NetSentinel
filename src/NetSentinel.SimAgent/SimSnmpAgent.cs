@@ -375,6 +375,14 @@ public sealed class SimSnmpAgent : IDisposable
             Add("1.3.6.1.4.1.99999.1.0", () => new Gauge32(Temperature()));
         }
 
+        if (_device.IncludeSensors)
+        {
+            AddTemperature(1, "Inlet Temp", 36);
+            AddTemperature(2, "Exhaust Temp", 44);
+            Add("1.3.6.1.2.1.25.3.3.1.2.1", () => new Integer32(11));
+            Add("1.3.6.1.2.1.25.3.3.1.2.2", () => new Integer32(24));
+        }
+
         if (!string.IsNullOrWhiteSpace(_device.HaState))
         {
             Add("1.3.6.1.4.1.25461.2.1.2.1.11.0", () => new OctetString(_device.HaState));
@@ -445,6 +453,14 @@ public sealed class SimSnmpAgent : IDisposable
         }
 
         _entries.Sort((left, right) => left.Oid.CompareTo(right.Oid));
+    }
+
+    private void AddTemperature(int index, string name, int celsius)
+    {
+        Add($"1.3.6.1.2.1.47.1.1.1.1.7.{index}", () => new OctetString(name));
+        Add($"1.3.6.1.2.1.99.1.1.1.1.{index}", () => new Integer32(8));
+        Add($"1.3.6.1.2.1.99.1.1.1.2.{index}", () => new Integer32(9));
+        Add($"1.3.6.1.2.1.99.1.1.1.4.{index}", () => new Integer32(celsius));
     }
 
     private void Add(string oid, Func<ISnmpData> read)

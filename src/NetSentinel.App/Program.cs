@@ -49,6 +49,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 
 builder.Services.AddSingleton<DevicePoller>();
+builder.Services.AddSingleton<SnmpWalkClient>();
 builder.Services.AddSingleton<TrapWorker>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<TrapWorker>());
 builder.Services.AddHostedService<PollWorker>();
@@ -59,6 +60,7 @@ builder.Services.AddScoped<EmailNotifier>();
 builder.Services.AddScoped<ImportService>();
 builder.Services.AddScoped<MapService>();
 builder.Services.AddScoped<InterfaceMonitorService>();
+builder.Services.AddScoped<WalkService>();
 
 builder.Services
     .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)

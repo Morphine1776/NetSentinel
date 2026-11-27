@@ -115,6 +115,65 @@ public class SnmpAgentIntegrationTests
         Assert.All(devices.Where(device => device.SysName is not ("sim-fw-01" or "sim-fw-02")), device => Assert.Null(device.HaState));
     }
 
+    [Fact(Timeout = 20000)]
+    public async Task Walk_reads_sensors_and_cpu_and_stops_at_the_subtree()
+    {
+        using var agent = new SimSnmpAgent();
+        agent.Start();
+        var client = new SnmpWalkClient();
+        var target = Target(agent.Port, "public");
+
+        var sensors = await client.WalkAsync(target, "1.3.6.1.2.1.99.1.1.1.4", 100, CancellationToken.None);
+        Assert.True(sensors.Ok, sensors.Error);
+        Assert.False(sensors.Truncated);
+        Assert.Equal(2, sensors.Rows.Count);
+        var inlet = sensors.Rows.Single(row => row.Oid.EndsWith(".4.1", StringComparison.Ordinal));
+        Assert.Equal("Inlet Temp", inlet.Label);
+        Assert.Equal("Inlet Temp", inlet.SuggestedName);
+        Assert.Equal("celsius", inlet.SensorType);
+        Assert.Equal("units", inlet.Scale);
+        Assert.Equal("Integer32", inlet.Type);
+        Assert.Equal("36", inlet.Value);
+        Assert.True(inlet.Numeric);
+        Assert.Equal("gauge", inlet.Kind);
+        Assert.Equal("C", inlet.Unit);
+        Assert.Contains(sensors.Rows, row => row.Label == "Exhaust Temp" && row.Value == "44");
+
+        var cpu = await client.WalkAsync(target, ".1.3.6.1.2.1.25.3.3.1.2", 20, CancellationToken.None);
+        Assert.True(cpu.Ok, cpu.Error);
+        Assert.False(cpu.Truncated);
+        Assert.Equal("Management plane CPU", cpu.Rows.Single(row => row.Oid.EndsWith(".2.1", StringComparison.Ordinal)).SuggestedName);
+        Assert.Equal("Data plane CPU", cpu.Rows.Single(row => row.Oid.EndsWith(".2.2", StringComparison.Ordinal)).SuggestedName);
+
+        var system = await client.WalkAsync(target, "1.3.6.1.2.1.1", 100, CancellationToken.None);
+        Assert.True(system.Ok, system.Error);
+        Assert.False(system.Truncated);
+        Assert.NotEmpty(system.Rows);
+        Assert.All(system.Rows, row => Assert.StartsWith("1.3.6.1.2.1.1.", row.Oid, StringComparison.Ordinal));
+        Assert.Contains(system.Rows, row => row.SuggestedName == "sysName" && row.Value == "sim-core-01");
+
+        var capped = await client.WalkAsync(target, "1.3.6.1.2.1", 3, CancellationToken.None);
+        Assert.True(capped.Ok, capped.Error);
+        Assert.Equal(3, capped.Rows.Count);
+        Assert.True(capped.Truncated);
+        Assert.Equal("rows", capped.Limit);
+        Assert.All(capped.Rows, row => Assert.StartsWith("1.3.6.1.2.1.", row.Oid, StringComparison.Ordinal));
+
+        var v1 = await client.WalkAsync(target with { Version = SnmpVersion.V1 }, "1.3.6.1.2.1.25.3.3.1.2", 20, CancellationToken.None);
+        Assert.True(v1.Ok, v1.Error);
+        Assert.Equal(2, v1.Rows.Count);
+        Assert.Contains(v1.Rows, row => row.SuggestedName == "Data plane CPU");
+
+        var dead = await client.WalkAsync(
+            target with { Community = "secret-community", Port = 1, TimeoutMs = 400, Retries = 0 },
+            "1.3.6.1.2.1.1",
+            10,
+            CancellationToken.None);
+        Assert.False(dead.Ok);
+        Assert.Contains("127.0.0.1", dead.Error);
+        Assert.DoesNotContain("secret-community", dead.Error);
+    }
+
     [Fact]
     public void Access_simulator_exposes_a_full_edge_of_ports()
     {

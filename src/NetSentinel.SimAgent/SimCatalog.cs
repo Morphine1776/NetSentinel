@@ -27,6 +27,7 @@ public sealed class SimDevice
     public string SysDescr { get; init; } = "NetSentinel Simulator";
     public string Location { get; init; } = "";
     public bool IncludeGauge { get; init; } = true;
+    public bool IncludeSensors { get; init; }
     public bool Answers { get; init; } = true;
     public string? HaState { get; init; }
     public string? HaPeerState { get; init; }
@@ -42,6 +43,7 @@ public static class SimCatalog
         SysName = "sim-core-01",
         SysDescr = "NetSentinel Simulator, virtual router",
         Location = "MDF",
+        IncludeSensors = true,
         Ports = new[]
         {
             Port(1, "lo", "local", 1, 1_000_000_000, 1000, 1_000, 800),
@@ -137,6 +139,7 @@ public static class SimCatalog
         SysDescr = "NetSentinel Simulator, Palo Alto firewall",
         Location = "FMC",
         IncludeGauge = false,
+        IncludeSensors = true,
         HaState = "active",
         HaPeerState = "passive",
         Ports = new[]

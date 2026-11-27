@@ -93,9 +93,12 @@
     <section class="panel">
         <div class="panel-head">
             <h2>Custom OIDs</h2>
-            <button class="btn" type="button" id="add-oid">Add OID</button>
+            <div class="actions">
+                <button class="btn" type="button" id="walk-open" data-device-id="@(Model.Input.Id?.ToString() ?? "")">Walk</button>
+                <button class="btn" type="button" id="add-oid">Add OID</button>
+            </div>
         </div>
-        <p class="hint">Polled with the device. Counter32 and Counter64 values also get a per-second rate for threshold rules.</p>
+        <p class="hint">Polled with the device. Counter32 and Counter64 values also get a per-second rate for threshold rules. Walk discovers OIDs on this host so you can add them here, then save.</p>
         <div id="oid-list">
             @for (var i = 0; i < Model.Input.CustomOids.Count; i++)
             {
@@ -104,6 +107,7 @@
                     <input data-field="Name" name="Input.CustomOids[@i].Name" value="@Model.Input.CustomOids[i].Name" placeholder="Name" maxlength="80" />
                     <input data-field="Oid" name="Input.CustomOids[@i].Oid" value="@Model.Input.CustomOids[i].Oid" placeholder="1.3.6.1.4.1…" class="mono" maxlength="200" />
                     <input data-field="Unit" name="Input.CustomOids[@i].Unit" value="@Model.Input.CustomOids[i].Unit" placeholder="Unit" maxlength="16" />
+                    <span class="oid-kind" data-kind=""></span>
                     <button class="btn ghost remove-oid" type="button">Remove</button>
                 </div>
             }
@@ -128,6 +132,58 @@
     </form>
 }
 
+<div id="walk-modal" class="modal-back" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="walk-title">
+        <div class="panel-head">
+            <h2 id="walk-title">Walk SNMP</h2>
+        </div>
+        <p class="hint">Uses the host on this form and the resolved SNMP settings: checked overrides, otherwise the location and global policy. Secrets stay on the server.</p>
+        <div class="walk-controls">
+            <label>Preset
+                <select id="walk-preset">
+                    <option value="custom" data-oid="" data-hint="" data-large="false">Custom OID</option>
+                    @foreach (var preset in WalkPresets.All)
+                    {
+                        <option value="@preset.Id" data-oid="@preset.Oid" data-hint="@preset.Hint" data-large="@(preset.Large ? "true" : "false")">@preset.Label</option>
+                    }
+                </select>
+            </label>
+            <label>OID
+                <input id="walk-oid" class="mono" maxlength="200" placeholder="1.3.6.1.2.1.1" autocomplete="off" />
+            </label>
+            <label>Max rows
+                <input id="walk-max" type="number" min="1" max="5000" value="500" />
+            </label>
+        </div>
+        <p class="hint" id="walk-hint"></p>
+        <div class="banner warn" id="walk-large" hidden>Full MIB-2 is large. The walk stops at the row cap (500 by default, 5000 maximum) or after 20 seconds.</div>
+        <div class="actions">
+            <button class="btn primary" type="button" id="walk-go">Walk</button>
+            <button class="btn ghost" type="button" id="walk-cancel">Cancel</button>
+        </div>
+        <div class="banner bad" id="walk-error" hidden></div>
+        <div class="banner" id="walk-note" hidden></div>
+        <label class="walk-filter">Filter
+            <input id="walk-filter" placeholder="OID, label, type, or value" autocomplete="off" />
+        </label>
+        <div class="table-wrap walk-results">
+            <table class="walk-table">
+                <thead>
+                    <tr>
+                        <th>OID</th>
+                        <th>Label</th>
+                        <th>Type</th>
+                        <th>Value</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="walk-rows"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 @section Scripts {
     <script src="~/js/policy.js"></script>
+    <script src="~/js/walk.js"></script>
 }

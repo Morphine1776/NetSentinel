@@ -19,7 +19,6 @@
         <h1>
             <span class="lamp @TextFormat.Lamp(device)"></span>
             @device.Name
-            <span class="ha-badge @Model.Ha.CssClass" title="@(string.IsNullOrEmpty(Model.Ha.Peer) ? "HA" : "Peer " + Model.Ha.Peer)">@Model.Ha.Label</span>
         </h1>
         <p class="lede mono">@device.Host:@Model.Effective.Port.Value · @TextFormat.Reachability(device)</p>
     </div>
@@ -49,7 +48,7 @@
     </div>
     <div>
         <span>HA</span>
-        <strong><span class="ha-badge @Model.Ha.CssClass" title="@(string.IsNullOrEmpty(Model.Ha.Peer) ? "" : "Peer " + Model.Ha.Peer)">@Model.Ha.Label</span></strong>
+        <strong><span class="ha-badge @Model.Ha.CssClass" title="@(string.IsNullOrEmpty(Model.Ha.Peer) ? "HA " + Model.Ha.Label : "Peer " + Model.Ha.Peer)">@(string.IsNullOrWhiteSpace(Model.Ha.Label) ? "N/A" : Model.Ha.Label)</span></strong>
     </div>
     <div class="wide">
         <span>Effective policy</span>
